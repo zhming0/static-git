@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Build the bundle for one architecture, then smoke-test it.
+# Usage: build-and-test <amd64|arm64>
+set -euo pipefail
+
+arch=$1
+platform="linux/${arch}"
+dist="dist/linux_${arch}"
+
+case "$(uname -m)" in
+  x86_64) native=amd64 ;;
+  aarch64 | arm64) native=arm64 ;;
+  *) native=unknown ;;
+esac
+
+builder_args=()
+if [[ "$arch" != "$native" ]]; then
+  # Hosted queues are amd64 only, so arm64 builds and runs under QEMU. The
+  # hosted remote builder emulates with BuildKit's own QEMU, under which gcc
+  # segfaults compiling git. Build on this agent's Docker daemon instead, with
+  # a pinned QEMU that the smoke test's containers use too.
+  echo "--- :linux: Installing QEMU binfmt handlers for ${arch}"
+  docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3 --install "$arch"
+  builder_args=(--builder default)
+fi
+
+echo "~~~ :docker: Builders"
+docker buildx ls
+
+echo "--- :docker: Building the ${platform} bundle"
+# Plain progress: the default TTY progress repaints into thousands of log lines.
+docker buildx bake "${builder_args[@]}" --progress=plain "$arch"
+
+echo "--- :package: Size report"
+cat "$dist"/*.sizes.txt
+{
+  echo "<details><summary>Bundle for ${platform}</summary>"
+  echo
+  echo '```'
+  cat "$dist"/*.sizes.txt
+  echo '```'
+  echo "</details>"
+} | buildkite-agent annotate --context "bundle-${arch}" --style info
+
+echo "+++ :test_tube: Smoke test (${platform})"
+scripts/smoke-test.sh "$dist"/*.tar.gz "$platform"
