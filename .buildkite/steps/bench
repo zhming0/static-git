@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Benchmark the amd64 bundle against distribution gits and annotate the build
+# with the results. Timings on shared hosted agents are noisy; treat them as a
+# rough comparison.
+set -euo pipefail
+
+echo "--- :buildkite: Downloading the linux/amd64 bundle"
+buildkite-agent artifact download "dist/linux_amd64/*.tar.gz" .
+
+scripts/bench.sh dist/linux_amd64/*.tar.gz bench.md
+
+buildkite-agent artifact upload bench.md
+{
+  echo "<details><summary>Benchmark (linux/amd64)</summary>"
+  echo
+  cat bench.md
+  echo "</details>"
+} | buildkite-agent annotate --context bench --style info
