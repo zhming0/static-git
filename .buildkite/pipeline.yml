@@ -54,3 +54,15 @@ steps:
       - "bench.md"
     soft_fail: true
     timeout_in_minutes: 30
+
+  # A block step waits for every step above, so only bundles that passed the
+  # smoke and matrix tests can be released.
+  - block: ":rocket: Release"
+    if: build.branch == "main"
+    prompt: "Publish these bundles as a GitHub release?"
+
+  - label: ":github: Create GitHub release"
+    if: build.branch == "main"
+    command: .buildkite/steps/create-github-release
+    secrets:
+      - GITHUB_TOKEN
