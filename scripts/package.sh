@@ -82,6 +82,7 @@ zlib=$(apkver zlib-static)
 expat=$(apkver expat-static)
 pcre2=$(apkver pcre2-static)
 nghttp2=$(apkver nghttp2-static)
+mimalloc=$(apkver mimalloc2-dev)
 ca-certificates=$(apkver ca-certificates-bundle)
 EOF
 

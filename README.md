@@ -30,7 +30,10 @@ It never sets `GIT_SSH_COMMAND` or `GIT_SSL_CAINFO`. ssh is never put in
 
 git is built with `RUNTIME_PREFIX`, so the bundle can be unpacked anywhere, and
 with an absolute `sysconfdir=/etc`, so the image's `/etc/gitconfig` (for
-example `safe.directory`) still applies.
+example `safe.directory`) still applies. It is linked with mimalloc instead of
+musl's `malloc`, which is slow in multi-threaded commands such as clone and
+`grep`; see [docs/report.md](docs/report.md#mimalloc). `MIMALLOC_*`
+environment variables affect git.
 
 Not included: Perl/Python/Tcl commands (`send-email`, `svn`, `p4`, `gitk`),
 `imap-send`, translations, `ssh-agent`/`ssh-add`/`ssh-keyscan`, git-lfs, and
@@ -72,10 +75,10 @@ scripts/bench.sh dist/linux_amd64/*.tar.gz                    # speed vs distro 
 ```
 
 The smoke test checks templates, `/etc/gitconfig`, the child `PATH` order,
-HTTPS clones with no config in `alpine`, `debian:bookworm-slim`, `busybox`,
-`distroless/static` and `scratch`, CA precedence, SSH clones with RSA, ECDSA
-and ed25519 keys through the bundled ssh, and that an ssh already in the image
-is preferred.
+that every git binary uses mimalloc, HTTPS clones with no config in `alpine`,
+`debian:bookworm-slim`, `busybox`, `distroless/static` and `scratch`, CA
+precedence, SSH clones with RSA, ECDSA and ed25519 keys through the bundled
+ssh, and that an ssh already in the image is preferred.
 
 The matrix test starts a local git server (`test/gitserver`: HTTPS with a
 private CA and basic auth, SSH, and an HTTP proxy) and checks:
@@ -115,9 +118,9 @@ Results and recommendations are in [docs/report.md](docs/report.md).
 
 [`versions.env`](versions.env) is the single place to bump versions. The bundle
 follows one Alpine stable branch: git, curl and OpenSSH are built from upstream
-source at the version that branch ships; OpenSSL, zlib, expat, pcre2, nghttp2
-and the CA bundle are that branch's packages. The exact package versions used
-are recorded in each bundle's `VERSIONS` file.
+source at the version that branch ships; OpenSSL, zlib, expat, pcre2, nghttp2,
+mimalloc and the CA bundle are that branch's packages. The exact package
+versions used are recorded in each bundle's `VERSIONS` file.
 
 ## Known limits
 

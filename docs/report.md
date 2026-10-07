@@ -1,10 +1,10 @@
 # static-git report
 
-Status of the bundle after milestones 1–7: what was tested, how fast it is,
-what does not work, and what to do next.
+Status of the bundle: what was tested, how fast it is, what does not work,
+and what to do next.
 
-Bundle: git 2.54.0, curl 8.22.0, OpenSSH 10.3p1, OpenSSL 3.5, built on
-Alpine 3.24 (musl), for linux/amd64 and linux/arm64.
+Bundle: git 2.54.0, curl 8.22.0, OpenSSH 10.3p1, OpenSSL 3.5, mimalloc 2.2.7,
+built on Alpine 3.24 (musl), for linux/amd64 and linux/arm64.
 
 ## Summary
 
@@ -16,13 +16,13 @@ Alpine 3.24 (musl), for linux/amd64 and linux/arm64.
   every user setting we tested (`SSL_CERT_FILE`, `SSL_CERT_DIR`,
   `GIT_SSL_CAINFO`, `http.sslCAInfo`, `GIT_SSH_COMMAND`, proxies,
   `safe.directory`) win over the bundle's fallbacks.
-- **Size:** 27 MB tarball, 60 MB unpacked (amd64); 28 MB and 57 MB (arm64).
-- **Speed:** the same as Alpine's own git, but 1.2–1.5x slower than Debian's
-  glibc git on CPU-heavy work, and about 1.3x slower on a large clone from
-  GitHub. The cause is musl's `malloc`. Linking mimalloc into git removes
-  most of the gap (see [Performance](#performance)). This is the main
-  recommendation.
-- **Launcher cost:** about 0.4 ms per git command (Go start-up plus one
+- **Size:** 28 MB tarball, 62 MB unpacked (amd64); 28 MB and 58 MB (arm64).
+- **Speed:** git is linked with mimalloc instead of musl's `malloc`. With
+  it, the bundle is 10–30% faster than Alpine's own git (5x on `grep`), and
+  within 10% of Debian's glibc git on clones, checkout, `blame` and `grep`.
+  With musl's `malloc` it was 1.2–1.5x slower than Debian's git on that
+  work, and 3x on `grep` (see [Performance](#performance)).
+- **Launcher cost:** about 0.5 ms per git command (Go start-up plus one
   extra exec). A typical agent checkout runs about 20 git commands.
 
 ## What is tested
@@ -32,7 +32,7 @@ CI runs all of this on every build for both architectures
 
 | Area | Checks | Script |
 |---|---|---|
-| Basics | `--version`, templates, `/etc/gitconfig` is the system config, child `PATH` order | smoke |
+| Basics | `--version`, templates, `/etc/gitconfig` is the system config, child `PATH` order, every git binary uses mimalloc | smoke |
 | HTTPS, no config | alpine, debian-slim, busybox, distroless, scratch | smoke |
 | CA precedence | no CA without the launcher; `GIT_SSL_CAINFO`, `http.sslCAInfo` win | smoke |
 | SSH | RSA, ECDSA, ed25519 keys through the bundled ssh; the image's ssh wins | smoke |
@@ -61,67 +61,87 @@ Bundle vs Alpine 3.24's git (same git version, musl, dynamically linked):
 
 | | static (ms) | alpine (ms) | static / alpine |
 |---|---:|---:|---:|
-| clone --bare from GitHub | 12050 ± 339 | 13579 ± 611 | 0.89 |
-| clone --bare --no-local | 14264 ± 253 | 16530 ± 106 | 0.86 |
-| checkout v2.30.0 -> v2.54.0 | 217 ± 4 | 219 ± 3 | 0.99 |
-| status | 4.43 ± 0.49 | 3.83 ± 0.27 | 1.16 |
-| log --oneline (all history) | 465 ± 15 | 498 ± 4 | 0.93 |
-| diff --stat v2.30.0 v2.54.0 | 871 ± 15 | 1043 ± 51 | 0.83 |
-| blame Makefile | 954 ± 5 | 993 ± 20 | 0.96 |
-| grep 'static int' | 45 ± 6 | 43 ± 4 | 1.04 |
-| --version | 0.68 ± 0.18 | 0.25 ± 0.08 | 2.67 |
-| --version (static without launcher) | 0.15 ± 0.03 | 0.23 ± 0.06 | 0.64 |
+| clone --bare from GitHub | 14195 ± 569 | 18200 ± 1050 | 0.78 |
+| clone --bare --no-local | 14433 ± 900 | 19836 ± 566 | 0.73 |
+| checkout v2.30.0 -> v2.54.0 | 198 ± 4 | 218 ± 4 | 0.90 |
+| status | 4.89 ± 0.25 | 4.50 ± 0.29 | 1.09 |
+| log --oneline (all history) | 416 ± 11 | 456 ± 3 | 0.91 |
+| diff --stat v2.30.0 v2.54.0 | 827 ± 3 | 1070 ± 11 | 0.77 |
+| blame Makefile | 625 ± 3 | 909 ± 6 | 0.69 |
+| grep 'static int' | 9.01 ± 1.1 | 50 ± 3 | 0.18 |
+| --version | 0.83 ± 0.11 | 0.25 ± 0.06 | 3.28 |
+| --version (static without launcher) | 0.25 ± 0.04 | 0.25 ± 0.05 | 0.99 |
 
 Bundle vs Debian 13's git (2.47.3, glibc):
 
 | | static (ms) | debian (ms) | static / debian |
 |---|---:|---:|---:|
-| clone --bare from GitHub | 14845 ± 619 | 11199 ± 499 | 1.33 |
-| clone --bare --no-local | 15791 ± 1055 | 10406 ± 136 | 1.52 |
-| checkout v2.30.0 -> v2.54.0 | 211 ± 2 | 172 ± 1 | 1.22 |
-| status | 3.73 ± 0.2 | 2.86 ± 0.2 | 1.31 |
-| log --oneline (all history) | 432 ± 3 | 429 ± 7 | 1.01 |
-| diff --stat v2.30.0 v2.54.0 | 862 ± 16 | 727 ± 20 | 1.18 |
-| blame Makefile | 873 ± 18 | 697 ± 13 | 1.25 |
-| grep 'static int' | 36 ± 5 | 13 ± 2 | 2.74 |
-| --version | 0.59 ± 0.12 | 0.32 ± 0.07 | 1.87 |
-| --version (static without launcher) | 0.16 ± 0.03 | 0.31 ± 0.07 | 0.51 |
+| clone --bare from GitHub | 14021 ± 366 | 12929 ± 223 | 1.08 |
+| clone --bare --no-local | 14250 ± 559 | 13282 ± 310 | 1.07 |
+| checkout v2.30.0 -> v2.54.0 | 213 ± 12 | 200 ± 10 | 1.07 |
+| status | 5.57 ± 0.5 | 4.46 ± 0.44 | 1.25 |
+| log --oneline (all history) | 449 ± 14 | 460 ± 11 | 0.98 |
+| diff --stat v2.30.0 v2.54.0 | 868 ± 13 | 740 ± 14 | 1.17 |
+| blame Makefile | 673 ± 9 | 712 ± 16 | 0.94 |
+| grep 'static int' | 14 ± 0.6 | 16 ± 1.4 | 0.90 |
+| --version | 0.80 ± 0.2 | 0.34 ± 0.06 | 2.34 |
+| --version (static without launcher) | 0.22 ± 0.04 | 0.31 ± 0.03 | 0.71 |
 
 What this shows:
 
-- Static linking itself costs nothing: without the launcher, the static git
-  starts faster than either distro git, and it matches Alpine's git on real
-  work.
-- The gap to Debian is musl. The slow cases are the multi-threaded ones
-  (`index-pack` during clone, `grep`), and they spend far more time in the
-  kernel: `grep` with 4 threads used 77 ms of system time vs 16 ms for
-  Debian's git, and the local clone 6.2 s vs 1.3 s. That is musl's `malloc`
-  returning memory to the kernel and taking a global lock.
-- In an agent checkout, only the first clone of a large repo is affected
-  noticeably: git/git (about 300 MB) from GitHub took about 3.5 s longer.
+- On real work the bundle beats Alpine's git everywhere except `status`
+  (a few ms, mostly start-up), and is within 10% of Debian's git except
+  `status` and `diff`. The remaining gap there is musl's slower
+  string and memory functions, which mimalloc does not replace.
+- Start-up: the real git starts about 0.05 ms slower than without mimalloc,
+  and still faster than Debian's git. The launcher adds about 0.5 ms.
 
-### Experiment: mimalloc
+### mimalloc
 
-Not shipped. To test the `malloc` theory, git was rebuilt with mimalloc
-2.2.7 (the version Alpine 3.24 packages) linked in as a static object, which
-replaces musl's `malloc`. Same machine, Debian 13 image, mean of runs:
+musl's `malloc` takes a global lock and returns freed memory to the kernel
+eagerly. Multi-threaded git commands (`index-pack` during clone, `grep`)
+spent most of their extra time in the kernel because of it: a local clone
+used 7.7 s of system time vs 1.5 s with mimalloc and 1.7 s for Debian's git.
 
-| | static | static + mimalloc | debian |
+git is linked with Alpine's static `libmimalloc-insecure.a`, which replaces
+`malloc`, `free` and the rest in every git binary, including
+`git-remote-https`. ("insecure" is upstream's default build; Alpine's
+default "secure" build adds guard pages and is slower.) The smoke test
+checks that every binary in `libexec/git-core` starts mimalloc. ssh and the
+launcher are unchanged.
+
+Same machine, both bundles benchmarked one after the other. Ratio to
+Debian's git, from the same run (lower is better):
+
+| | musl malloc | mimalloc |
+|---|---:|---:|
+| clone --bare from GitHub | 1.29 | 1.08 |
+| clone --bare --no-local | 1.43 | 1.07 |
+| checkout v2.30.0 -> v2.54.0 | 1.22 | 1.07 |
+| status | 1.40 | 1.25 |
+| log --oneline (all history) | 1.07 | 0.98 |
+| diff --stat v2.30.0 v2.54.0 | 1.25 | 1.17 |
+| blame Makefile | 1.33 | 0.94 |
+| grep 'static int' | 2.91 | 0.90 |
+| --version (static without launcher) | 0.52 | 0.71 |
+
+Costs, measured with GNU time (peak RSS of the largest process):
+
+| | musl malloc | mimalloc | debian |
 |---|---:|---:|---:|
-| clone --bare --no-local (s) | 13.73 | 11.78 | 11.00 |
-| clone --bare from GitHub, 3 runs (s) | 13.88 | 11.72 | 10.80 |
-| checkout v2.30.0 -> v2.54.0 (ms) | 207 | 200 | 174 |
-| status (ms) | 4.7 | 4.0 | 3.0 |
-| blame Makefile (ms) | 941 | 652 | 672 |
-| grep 'static int' (ms) | 32.3 | 11.4 | 10.6 |
-| peak RSS, clone from GitHub (MB) | 97 | 137 | 97 |
+| clone --bare from GitHub, peak RSS (MB) | 97 | 133 | 98 |
+| clone --bare --no-local, peak RSS (MB) | 578 | 616 | 531 |
+| grep 'static int', peak RSS (MB) | 7 | 34 | 9 |
+| blame Makefile, peak RSS (MB) | 315 | 328 | 293 |
 
-mimalloc brings clone, `grep` and `blame` to within 0–10% of glibc git. The
-remaining 10–20% on checkout and diff is musl's slower string and memory
-functions. The costs: about 40% more peak memory during a clone, about
-140 KB more per binary, and one more library to keep up to date. Each git
-process also reserves (but does not use) 1 GiB of address space, which
-matters only under a tight `ulimit -v`.
+- More memory: up to about 40 MB more per process, from mimalloc's
+  per-thread heaps.
+- About 180 KB more per binary; the tarball grows by 0.6 MB.
+- Each git process reserves (but does not use) 1 GiB of address space.
+  This matters only under a tight `ulimit -v`.
+- `MIMALLOC_*` environment variables change mimalloc's settings in git.
+- One more library to keep up to date. It comes from the same Alpine branch
+  as the others, and its version is in `VERSIONS`.
 
 ## Known limits
 
@@ -144,15 +164,13 @@ Unchanged from the earlier PR, plus what the matrix test found:
 
 ## Recommendations
 
-1. **Link mimalloc into git** (follow-up PR). It closes most of the speed
-   gap; the matrix test already covers the behaviour it could break. Use the
-   version Alpine packages, as for the other libraries.
-2. **Decide the fixed install path.** Still open from the plan. Nothing in
+1. **Decide the fixed install path.** Still open from the plan. Nothing in
    the bundle depends on it.
-3. **Add a native arm64 CI queue** if one becomes available. arm64 is built
+2. **Add a native arm64 CI queue** if one becomes available. arm64 is built
    and tested under QEMU on amd64 agents, which works but is slow, and arm64
-   can't be benchmarked that way.
-4. **Size, if it matters:** `git-remote-http`, `git-http-fetch` and
+   can't be benchmarked that way, so mimalloc's gain there is expected but
+   not measured.
+3. **Size, if it matters:** `git-remote-http`, `git-http-fetch` and
    `git-http-push` are separate ~10 MB copies of libcurl and OpenSSL, and
    the server-side tools (`git-daemon`, `git-http-backend`, `git-shell`,
    `scalar`) add ~14 MB. Dropping `git-http-push` and the server-side tools

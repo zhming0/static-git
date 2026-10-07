@@ -7,6 +7,7 @@
 #
 # Checks:
 #   - basics: version, templates, /etc/gitconfig, PATH order
+#   - every git binary uses mimalloc
 #   - HTTPS clone with no config, in images with and without a CA store
 #   - SSH clone with RSA, ECDSA and ed25519 keys, using the bundled ssh
 #   - an ssh already in the image wins over the bundled one
@@ -45,6 +46,23 @@ out=$(sh_in "$id:alpine" "git -c 'alias.p=!echo \"\$PATH\"' p")
 [[ $out == "$B/libexec/git-core:"* ]] || die "child PATH does not start with libexec/git-core: $out"
 [[ $out == *":$B/fallback/bin" ]] || die "child PATH does not end with fallback/bin: $out"
 pass "child PATH: libexec/git-core first, fallback/bin last"
+
+# Every git binary must use mimalloc instead of musl's malloc (see
+# build-git.sh). With MIMALLOC_VERBOSE=1, mimalloc prints its version at start.
+# Hardlinks to one binary are checked once.
+# shellcheck disable=SC2016  # expanded in the container
+out=$(sh_in "$id:alpine" "cd $B/libexec/git-core"'
+	for f in *; do
+		[ "$(head -c 4 "$f" | tail -c 3)" = ELF ] || continue
+		i=$(stat -c %i "$f")
+		case " $seen " in *" $i "*) continue ;; esac
+		seen="$seen $i"
+		MIMALLOC_VERBOSE=1 ./"$f" --version </dev/null 2>&1 >/dev/null | grep -q "^mimalloc: v" ||
+			{ echo "$f does not use mimalloc" >&2; exit 1; }
+		printf "%s " "$f"
+	done')
+[[ $out == *"git "* && $out == *git-remote-* ]] || die "mimalloc check missed git or the HTTP helper: $out"
+pass "mimalloc in every git binary: ${out% }"
 
 echo "--- :lock: HTTPS clone with no config"
 # <name> <base> <expected SSL_CERT_FILE>; "-" means the image has no shell.
