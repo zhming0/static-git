@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Publish the bundles built earlier in this build as a GitHub release.
+#
+# The tag is a calendar version, created at the commit this build checked out.
+# gh creates the tag through the API, so nothing is pushed with git.
+set -euo pipefail
+
+# shellcheck source=.buildkite/steps/lib/mise.bash
+source "$(dirname "$0")/lib/mise.bash"
+ensure_tools
+
+REPO="zhming0/static-git"
+# shellcheck source=/dev/null  # only GIT_VERSION is used
+GIT_VERSION="$(. ./versions.env && echo "$GIT_VERSION")"
+# A leading 1 on the time keeps it fixed width without a leading zero.
+TAG="$(date -u +'%Y.%-m.%-d')-1$(date -u +'%H%M%S')"
+COMMIT="$(git rev-parse HEAD)"
+
+echo "--- :buildkite: Downloading the bundles"
+assets=()
+for arch in amd64 arm64; do
+  name="static-git-${GIT_VERSION}-linux-${arch}.tar.gz"
+  buildkite-agent artifact download "dist/linux_${arch}/${name}*" .
+  # Both files must exist; a missing one would publish a partial release.
+  for f in "dist/linux_${arch}/${name}" "dist/linux_${arch}/${name}.sha256"; do
+    [[ -f "$f" ]] || { echo "missing $f" >&2; exit 1; }
+    assets+=("$f")
+  done
+  (cd "dist/linux_${arch}" && sha256sum -c "${name}.sha256")
+done
+
+versions() {
+  tar -xzOf "dist/linux_$1/static-git-${GIT_VERSION}-linux-$1.tar.gz" ./VERSIONS
+}
+
+notes="git ${GIT_VERSION}, static, for \`linux/amd64\` and \`linux/arm64\`.
+
+## Install
+
+The tarball has no top-level directory:
+
+\`\`\`sh
+curl -fsSLO https://github.com/${REPO}/releases/download/${TAG}/static-git-${GIT_VERSION}-linux-amd64.tar.gz
+mkdir -p /opt/static-git
+tar -C /opt/static-git -xzf static-git-${GIT_VERSION}-linux-amd64.tar.gz
+/opt/static-git/bin/git --version
+\`\`\`
+
+## Versions
+
+\`\`\`
+$(versions amd64)
+\`\`\`
+
+\`\`\`
+$(versions arm64)
+\`\`\`
+"
+
+echo "+++ :github: Creating release ${TAG} at ${COMMIT}"
+gh release create "$TAG" "${assets[@]}" \
+  --repo "$REPO" \
+  --target "$COMMIT" \
+  --title "${TAG} (git ${GIT_VERSION})" \
+  --generate-notes \
+  --notes "$notes"

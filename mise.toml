@@ -7,3 +7,7 @@ min_version = "2025.11.0"
 # Must equal GO_VERSION in the Dockerfile, which builds the launcher that ships
 # in the bundle. .buildkite/steps/test-launcher checks this.
 go = "1.27.1"
+
+# Only the release step needs the GitHub CLI. The aqua registry entry for it
+# fails attestation verification, so install it directly from GitHub instead.
+"github:cli/cli" = "2.102.0"

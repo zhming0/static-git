@@ -100,6 +100,15 @@ CI runs on Buildkite (`.buildkite/pipeline.yml`): build and smoke test, then
 the matrix test, for both architectures, and the benchmark on amd64. The
 tarballs and `bench.md` are kept as build artifacts.
 
+## Release
+
+On `main`, after every test passes, a manual block step releases the build.
+`.buildkite/steps/create-github-release` picks a calendar version
+(`2026.10.7-1123456`), creates that tag at the built commit, and uploads both
+tarballs and their `.sha256` files to a
+[GitHub release](https://github.com/zhming0/static-git/releases). It uses the
+`GITHUB_TOKEN` cluster secret. The release commits nothing to the repository.
+
 Results and recommendations are in [docs/report.md](docs/report.md).
 
 ## Versions
