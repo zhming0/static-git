@@ -4,10 +4,8 @@ agents:
   queue: hosted-amd64-small
 
 steps:
-  # The launcher's unit tests also run inside the Dockerfile, so no bundle is
-  # built from a broken launcher. This step reports them on their own, fast.
   - label: ":golang: Launcher"
-    command: docker buildx bake launcher-test
+    command: .buildkite/steps/test-launcher
 
   - label: ":bash: ShellCheck"
     command: .buildkite/steps/shellcheck

@@ -5,7 +5,7 @@
 #   docker buildx bake amd64     (see docker-bake.hcl)
 #
 # Versions live in versions.env. ALPINE_VERSION must match it; the base stage
-# checks that.
+# checks that. GO_VERSION must match mise.toml; the launcher CI step checks that.
 ARG ALPINE_VERSION=3.24
 ARG GO_VERSION=1.27.1
 

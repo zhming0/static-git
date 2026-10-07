@@ -64,8 +64,9 @@ tar -C /opt/static-git -xzf static-git-*-linux-amd64.tar.gz
 ## Test
 
 ```sh
-docker buildx bake launcher-test                                   # launcher unit tests
-scripts/smoke-test.sh dist/linux_amd64/*.tar.gz linux/amd64        # bundle in real images
+mise install                                                 # Go, pinned in mise.toml
+(cd launcher && go test ./...)                               # launcher unit tests
+scripts/smoke-test.sh dist/linux_amd64/*.tar.gz linux/amd64  # bundle in real images
 ```
 
 The smoke test checks templates, `/etc/gitconfig`, the child `PATH` order,
