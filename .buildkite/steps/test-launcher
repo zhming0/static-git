@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# gofmt, vet and unit tests for the launcher, with Go from mise.toml.
+#
+# The Dockerfile runs the same checks before it builds a bundle, so no bundle
+# is built from a broken launcher. This step reports them on their own, fast.
+set -euo pipefail
+
+# shellcheck source=.buildkite/steps/lib/mise.bash
+source "$(dirname "$0")/lib/mise.bash"
+ensure_tools
+
+echo "--- :golang: Go version matches the Dockerfile"
+want="go$(sed -n 's/^ARG GO_VERSION=//p' Dockerfile)"
+got="$(go env GOVERSION)"
+if [[ "$got" != "$want" ]]; then
+  echo "mise.toml has ${got}, Dockerfile has ${want}" >&2
+  exit 1
+fi
+
+cd launcher
+
+# The bundle's launcher is built with cgo off, so test it the same way. This
+# also means the step needs no C compiler.
+export CGO_ENABLED=0
+
+echo "--- :golang: gofmt"
+unformatted="$(gofmt -l .)"
+if [[ -n "$unformatted" ]]; then
+  echo "Not gofmt-formatted:" >&2
+  echo "$unformatted" >&2
+  exit 1
+fi
+
+echo "--- :golang: go vet"
+go vet ./...
+
+echo "+++ :golang: go test"
+go test ./...

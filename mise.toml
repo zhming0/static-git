@@ -1,0 +1,9 @@
+# Tool versions for CI and local development. After cloning, run `mise install`.
+#
+# The bundle itself is built in Docker; see the Dockerfile and versions.env.
+min_version = "2025.11.0"
+
+[tools]
+# Must equal GO_VERSION in the Dockerfile, which builds the launcher that ships
+# in the bundle. .buildkite/steps/test-launcher checks this.
+go = "1.27.1"

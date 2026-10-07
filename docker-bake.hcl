@@ -37,10 +37,3 @@ target "arm64" {
   platforms = ["linux/arm64"]
   output    = ["type=local,dest=dist/linux_arm64"]
 }
-
-# gofmt, vet and unit tests for the launcher; nothing is exported.
-target "launcher-test" {
-  inherits = ["_common"]
-  target   = "launcher"
-  output   = ["type=cacheonly"]
-}

@@ -16,5 +16,10 @@ curl -fsSL -o "$tmp/sc.tar.xz" \
 echo "${SHA256}  $tmp/sc.tar.xz" | sha256sum -c -
 tar -xJf "$tmp/sc.tar.xz" -C "$tmp"
 
+files=(scripts/*.sh .buildkite/steps/lib/*.bash)
+for f in .buildkite/steps/*; do
+  [[ -f "$f" ]] && files+=("$f")
+done
+
 echo "+++ :bash: ShellCheck"
-"$tmp/shellcheck-${VERSION}/shellcheck" scripts/*.sh .buildkite/steps/*
+"$tmp/shellcheck-${VERSION}/shellcheck" --external-sources "${files[@]}"
