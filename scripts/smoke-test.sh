@@ -3,9 +3,7 @@
 #
 # Usage: smoke-test.sh <static-git-*.tar.gz> <platform, e.g. linux/arm64>
 #
-# Needs only docker. The bundle is copied into each test image instead of
-# bind-mounted, so this also works when the docker daemon is not on this host.
-# A non-native platform needs QEMU binfmt handlers.
+# Needs only docker (see test-lib.sh).
 #
 # Checks:
 #   - basics: version, templates, /etc/gitconfig, PATH order
@@ -17,48 +15,10 @@ set -euo pipefail
 tarball=$1
 platform=$2
 
-B=/opt/static-git
+# shellcheck source=scripts/test-lib.sh
+. "$(dirname "$0")/test-lib.sh"
+
 HTTPS_REPO=https://github.com/octocat/Hello-World.git
-id=sg-smoke-$$
-work=$(mktemp -d)
-
-cleanup() {
-	docker rm -f "$id-sshd" >/dev/null 2>&1 || true
-	docker network rm "$id" >/dev/null 2>&1 || true
-	docker volume rm "$id" >/dev/null 2>&1 || true
-	rm -rf "$work"
-}
-trap cleanup EXIT
-
-pass() { echo "ok: $*"; }
-die() { echo "FAIL: $*" >&2; exit 1; }
-
-mkdir -p "$work/bundle"
-tar -C "$work/bundle" -xzf "$tarball"
-
-# Build <tag> from <base> with the bundle at $B. Extra Dockerfile lines can
-# follow on stdin. --load matters with a remote buildx builder (hosted agents),
-# which otherwise keeps the image to itself; for the same reason <base> must be
-# a registry image, not one built here.
-image() {
-	local tag=$1 base=$2
-	{
-		echo "FROM $base"
-		echo "COPY bundle/ $B/"
-		cat
-	} >"$work/Dockerfile"
-	docker buildx build -q --load --platform "$platform" -t "$tag" -f "$work/Dockerfile" "$work" >/dev/null
-}
-
-# Run a shell command in <tag>, with the bundle's git first on PATH. Set net
-# to run on that docker network.
-net=bridge
-sh_in() {
-	local tag=$1
-	shift
-	docker run --rm --platform "$platform" --network "$net" \
-		-e "PATH=$B/bin:/usr/local/bin:/usr/bin:/bin" "$tag" sh -ec "$*"
-}
 
 echo "--- :package: $(basename "$tarball") on $platform"
 cat "$work/bundle/VERSIONS"
@@ -93,6 +53,7 @@ while read -r name base want; do
 	if [[ $want == - ]]; then
 		# No shell: run git directly, clone into a volume, check it from busybox.
 		docker volume rm "$id" >/dev/null 2>&1 || true
+		docker volume create --label "$id" "$id" >/dev/null
 		docker run --rm --platform "$platform" -v "$id:/work" -e HOME=/work \
 			--entrypoint "$B/bin/git" "$id:$name" clone -q --depth 1 "$HTTPS_REPO" /work/repo
 		docker run --rm -v "$id:/work" busybox:1.37 test -f /work/repo/README
@@ -123,9 +84,8 @@ pass "GIT_SSL_CAINFO and http.sslCAInfo win over SSL_CERT_FILE"
 
 echo "--- :key: SSH clone with the bundled ssh"
 # The server runs natively; only the client is the platform under test.
-docker network create "$id" >/dev/null
-net=$id
-docker run -d --name "$id-sshd" --network "$id" --network-alias sshd alpine:3.24 sh -ec '
+new_network
+docker run -d --label "$id" --name "$id-sshd" --network "$id" --network-alias sshd alpine:3.24 sh -ec '
 	apk add -q openssh-server openssh-keygen git
 	ssh-keygen -A
 	adduser -D -s /bin/sh git
@@ -144,11 +104,7 @@ docker run -d --name "$id-sshd" --network "$id" --network-alias sshd alpine:3.24
 	touch /ready
 	exec /usr/sbin/sshd -D -e
 ' >/dev/null
-for _ in $(seq 1 60); do
-	docker exec "$id-sshd" test -f /ready 2>/dev/null && break
-	sleep 1
-done
-docker exec "$id-sshd" test -f /ready || { docker logs "$id-sshd" >&2; die "sshd did not start"; }
+wait_ready "$id-sshd"
 for t in rsa ecdsa ed25519; do
 	docker exec "$id-sshd" cat /keys/id_$t >"$work/id_$t"
 done

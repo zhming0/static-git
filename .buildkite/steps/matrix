@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Run the full test matrix on the bundle built earlier in this build.
+# Usage: matrix <amd64|arm64>
+set -euo pipefail
+
+arch=$1
+platform="linux/${arch}"
+
+echo "--- :buildkite: Downloading the ${platform} bundle"
+buildkite-agent artifact download "dist/linux_${arch}/*.tar.gz" .
+
+case "$(uname -m)" in
+  x86_64) native=amd64 ;;
+  aarch64 | arm64) native=arm64 ;;
+  *) native=unknown ;;
+esac
+if [[ "$arch" != "$native" ]]; then
+  echo "--- :linux: Installing QEMU binfmt handlers for ${arch}"
+  docker run --privileged --rm tonistiigi/binfmt:qemu-v10.2.3 --install "$arch"
+fi
+
+scripts/matrix-test.sh "dist/linux_${arch}"/*.tar.gz "$platform"

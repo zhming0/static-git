@@ -1,5 +1,5 @@
-# Hosted queues are amd64 only. linux/arm64 is built and smoke-tested under
-# QEMU, so its step is much slower.
+# Hosted queues are amd64 only. linux/arm64 is built and tested under QEMU,
+# so its steps are much slower.
 agents:
   queue: hosted-amd64-small
 
@@ -11,6 +11,7 @@ steps:
     command: .buildkite/steps/shellcheck
 
   - label: ":docker: Bundle amd64"
+    key: bundle-amd64
     command: .buildkite/steps/build-and-test amd64
     agents:
       queue: hosted-amd64-medium
@@ -20,9 +21,36 @@ steps:
 
   # Emulated, so it gets the large queue and a longer timeout.
   - label: ":docker: Bundle arm64"
+    key: bundle-arm64
     command: .buildkite/steps/build-and-test arm64
     agents:
       queue: hosted-amd64-large
     artifact_paths:
       - "dist/**/*"
     timeout_in_minutes: 90
+
+  - label: ":test_tube: Matrix amd64"
+    depends_on: bundle-amd64
+    command: .buildkite/steps/matrix amd64
+    agents:
+      queue: hosted-amd64-medium
+    timeout_in_minutes: 20
+
+  - label: ":test_tube: Matrix arm64"
+    depends_on: bundle-arm64
+    command: .buildkite/steps/matrix arm64
+    agents:
+      queue: hosted-amd64-large
+    timeout_in_minutes: 45
+
+  # Informational: shared agents make timings noisy, and it clones git/git
+  # from GitHub, so a failure here does not fail the build.
+  - label: ":stopwatch: Benchmark amd64"
+    depends_on: bundle-amd64
+    command: .buildkite/steps/bench
+    agents:
+      queue: hosted-amd64-medium
+    artifact_paths:
+      - "bench.md"
+    soft_fail: true
+    timeout_in_minutes: 30

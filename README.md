@@ -64,9 +64,11 @@ tar -C /opt/static-git -xzf static-git-*-linux-amd64.tar.gz
 ## Test
 
 ```sh
-mise install                                                 # Go, pinned in mise.toml
-(cd launcher && go test ./...)                               # launcher unit tests
-scripts/smoke-test.sh dist/linux_amd64/*.tar.gz linux/amd64  # bundle in real images
+mise install                                                  # Go, pinned in mise.toml
+(cd launcher && go test ./...)                                # launcher unit tests
+scripts/smoke-test.sh dist/linux_amd64/*.tar.gz linux/amd64   # quick check in real images
+scripts/matrix-test.sh dist/linux_amd64/*.tar.gz linux/amd64  # full test matrix
+scripts/bench.sh dist/linux_amd64/*.tar.gz                    # speed vs distro git (native only)
 ```
 
 The smoke test checks templates, `/etc/gitconfig`, the child `PATH` order,
@@ -75,8 +77,30 @@ HTTPS clones with no config in `alpine`, `debian:bookworm-slim`, `busybox`,
 and ed25519 keys through the bundled ssh, and that an ssh already in the image
 is preferred.
 
-CI runs on Buildkite (`.buildkite/pipeline.yml`) for both architectures and
-keeps the tarballs as build artifacts.
+The matrix test starts a local git server (`test/gitserver`: HTTPS with a
+private CA and basic auth, SSH, and an HTTP proxy) and checks:
+
+- 12 images (Alpine, Debian, Ubuntu, Rocky, UBI, Fedora, Amazon Linux,
+  openSUSE, busybox): which CA store is picked, an HTTPS clone from GitHub,
+  and the Buildkite agent's checkout commands (`test/agent-checkout.sh`:
+  clone, clean, fetch, checkout, submodules, a PR ref, mirrors, sparse
+  blobless clone, shallow clone, push) over authenticated HTTPS.
+- Private CA: the image's store after the distro's update tool,
+  `SSL_CERT_FILE`, `SSL_CERT_DIR`, `http.sslCAInfo`, per-URL config,
+  `GIT_SSL_NO_VERIFY`.
+- Proxy: `https_proxy`, `HTTPS_PROXY`, `http.proxy`, `no_proxy`.
+- `safe.directory` from each trusted scope, and that repo config is ignored.
+- The agent's checkout commands over SSH with the bundled ssh.
+- A random UID, a read-only root, a symlink to `bin/git` on `PATH`, a bundle
+  path with a space, and an empty environment.
+- Build-dependent features (`test/features.sh`): PCRE2, iconv, hooks,
+  `rebase -i`, `gc`, `credential-cache`, and more.
+
+CI runs on Buildkite (`.buildkite/pipeline.yml`): build and smoke test, then
+the matrix test, for both architectures, and the benchmark on amd64. The
+tarballs and `bench.md` are kept as build artifacts.
+
+Results and recommendations are in [docs/report.md](docs/report.md).
 
 ## Versions
 
