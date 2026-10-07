@@ -1,0 +1,30 @@
+# Hosted queues are amd64 only. linux/arm64 is built and smoke-tested under
+# QEMU, so its step is much slower.
+agents:
+  queue: hosted-amd64-small
+
+steps:
+  # The launcher's unit tests also run inside the Dockerfile, so no bundle is
+  # built from a broken launcher. This step reports them on their own, fast.
+  - label: ":golang: Launcher"
+    command: docker buildx bake launcher-test
+
+  - label: ":bash: ShellCheck"
+    command: .buildkite/steps/shellcheck
+
+  - label: ":docker: Bundle amd64"
+    command: .buildkite/steps/build-and-test amd64
+    agents:
+      queue: hosted-amd64-medium
+    artifact_paths:
+      - "dist/**/*"
+    timeout_in_minutes: 30
+
+  # Emulated, so it gets the large queue and a longer timeout.
+  - label: ":docker: Bundle arm64"
+    command: .buildkite/steps/build-and-test arm64
+    agents:
+      queue: hosted-amd64-large
+    artifact_paths:
+      - "dist/**/*"
+    timeout_in_minutes: 90
