@@ -24,12 +24,18 @@ download() {
 	curl -fsSL --retry 3 -o "${1##*/}" "$1"
 }
 
-# verify <key-name> <fingerprint> <signature> <signed-file, or - for stdin>
+# verify <key-name> <fingerprint> <signature> [signed file, or - for stdin]
+# With no signed file, <signature> is a clear-signed file and its signed text
+# is written to <signature>.txt.
 verify() {
 	# gpgv reads only binary keyrings; the keys are stored armored so they
 	# can be read in review.
 	gpg --batch --quiet --dearmor <"$keys/$1.asc" >"$GNUPGHOME/$1.gpg"
-	gpgv --keyring "$GNUPGHOME/$1.gpg" --status-fd 3 "$3" "$4" 3>"$GNUPGHOME/status"
+	if [ $# -ge 4 ]; then
+		gpgv --keyring "$GNUPGHOME/$1.gpg" --status-fd 3 "$3" "$4" 3>"$GNUPGHOME/status"
+	else
+		gpgv --keyring "$GNUPGHOME/$1.gpg" --status-fd 3 --output "$3.txt" "$3" 3>"$GNUPGHOME/status"
+	fi
 	# The last field of VALIDSIG is the primary key's fingerprint, also when
 	# a subkey made the signature.
 	signer=$(awk '$2 == "VALIDSIG" { print $NF }' "$GNUPGHOME/status")
@@ -57,6 +63,22 @@ download "$openssh"
 download "$openssh.asc"
 verify openssh 7168B983815A5EEF59A4ADFD2A3F414E736060BA "${openssh##*/}.asc" "${openssh##*/}"
 
-rm -rf "$GNUPGHOME" ./*.sign ./*.asc
+# git-lfs signs sha256sums.asc, which lists the sha256 of every release file,
+# instead of each file. The release's source tarball has the same files as
+# GitHub's archive of the tag, which Alpine uses.
+lfs=https://github.com/git-lfs/git-lfs/releases/download/v${GIT_LFS_VERSION}
+lfs_tar=git-lfs-v${GIT_LFS_VERSION}.tar.gz
+download "$lfs/$lfs_tar"
+download "$lfs/sha256sums.asc"
+verify git-lfs 86CD3297749375BCF8206715F54FE648088335A9 sha256sums.asc
+# Lines are "<sha256> *<file>"; exactly one must name the tarball.
+sum=$(awk -v f="*$lfs_tar" '$2 == f { print $1 }' sha256sums.asc.txt)
+case "$sum" in
+[0-9a-f]*) [ ${#sum} = 64 ] ;;
+*) false ;;
+esac || { echo "sha256sums.asc: no single entry for $lfs_tar" >&2; exit 1; }
+echo "$sum  $lfs_tar" | sha256sum -c -
+
+rm -rf "$GNUPGHOME" ./*.sign ./*.asc ./*.asc.txt
 # Logged so the build output records exactly which files were used.
 sha256sum ./*

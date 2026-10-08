@@ -14,12 +14,12 @@ sets up.
 
 ## What you get
 
-- git, an OpenSSH client and a CA bundle, all static. No libc or packages
-  needed.
-- **Fills gaps, never overrides.** The image's CA store, ssh,
+- git, an OpenSSH client, git-lfs and a CA bundle, all static. No libc or
+  packages needed.
+- **Fills gaps, never overrides.** The image's CA store, ssh, git-lfs,
   `/etc/gitconfig` and your own settings (`SSL_CERT_FILE`, `GIT_SSH_COMMAND`,
   `http.sslCAInfo`, proxies, `safe.directory`, ...) always win. The bundled
-  ssh and CA bundle are used only when the image has none.
+  ssh, git-lfs and CA bundle are used only when the image has none.
 - Works from any directory, including through a symlink.
 - Tested in 12 distributions plus busybox, distroless and `scratch`, over
   HTTPS, SSH, private CAs and proxies. About as fast as Debian's git. See
@@ -49,9 +49,9 @@ directory. To add `git` and leave everything else as it was:
    win; put it first if you always want the bundle's git.
 3. **Do not put `libexec/git-core` or `fallback/bin` on `PATH`**, and do not
    set `SSL_CERT_FILE` for it. `bin/git` is a small launcher that adds the
-   bundled ssh and CA bundle only for git and the programs git starts
-   (ssh, hooks), and only when the image has none. Other programs see no
-   change.
+   bundled ssh, git-lfs and CA bundle only for git and the programs git
+   starts (ssh, git-lfs, hooks), and only when the image has none. Other
+   programs see no change.
 
 In a Dockerfile:
 
@@ -74,14 +74,22 @@ docker run -v /opt/static-git:/opt/static-git:ro your-image /opt/static-git/bin/
 In Kubernetes, an init container can copy the bundle into a shared
 `emptyDir` volume that the main container mounts read-only.
 
+### Git LFS
+
+`git lfs` works with no setup, but the bundle does not turn on the LFS
+filters, so a plain clone leaves LFS files as pointers. Run `git lfs install`
+once (or `git lfs install --local` in a repository), or `git lfs pull` after
+the clone. The Buildkite agent does this itself when
+`BUILDKITE_GIT_LFS_ENABLED=true`.
+
 ## Known limits
 
 - SSH needs an `/etc/passwd` entry for the current UID. HTTPS does not.
 - Host lookups use `/etc/hosts` and DNS only (no NSS plugins).
-- Hooks inherit the `SSL_CERT_FILE` the launcher sets.
+- Hooks and git-lfs inherit the `SSL_CERT_FILE` the launcher sets.
 - Not included: Perl/Python/Tcl commands (`send-email`, `svn`, `p4`, `gitk`),
-  `imap-send`, translations, `ssh-agent`/`ssh-add`/`ssh-keyscan`, git-lfs, and
-  FIDO (`-sk`) SSH keys.
+  `imap-send`, translations, `ssh-agent`/`ssh-add`/`ssh-keyscan`, and FIDO
+  (`-sk`) SSH keys.
 
 ## Development
 

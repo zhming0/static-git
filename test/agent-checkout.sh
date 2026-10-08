@@ -9,7 +9,9 @@
 #      JOB        unique name for the tag and branch pushed back
 #
 # Flags are the agent's defaults: clone -v, clean -ffxdq, fetch -v --prune,
-# checkout -f (see buildkite/agent internal/job/checkout.go).
+# checkout -f (see buildkite/agent internal/job/checkout.go). Jobs 1 and 2 also
+# run what the agent adds with BUILDKITE_GIT_LFS_ENABLED=true; job 5 pushes an
+# LFS object.
 set -eu
 
 : "${REPO:?}" "${MAIN_SHA:?}" "${PR_SHA:?}" "${JOB:?}"
@@ -37,14 +39,26 @@ clean() {
 	run git submodule foreach --recursive "git clean -ffxdq"
 }
 
+# The agent runs this after checkout and submodules.
+lfs() {
+	run git lfs fetch
+	run git lfs checkout
+}
+
+lfs_content="stored in git lfs"
+
 # Job 1: a branch build at the tip of main, in a new checkout dir.
+run git lfs version
 mkdir "$root/checkout" && cd "$root/checkout"
 run git clone -v -- "$REPO" .
 run git clean -ffxdq
+run git lfs install --local
 run git fetch -v --prune -- origin main
 run git checkout -f FETCH_HEAD
 submodules
+lfs
 clean
+test "$(cat lfs.dat)" = "$lfs_content"
 test "$(git rev-parse HEAD)" = "$MAIN_SHA"
 test -f sub/sub.txt
 git --no-pager log -1 HEAD -s --no-color --format='%H%n%an%n%ae%n%s' | grep -qx "Second commit"
@@ -55,14 +69,17 @@ echo dirty >>README
 echo junk >untracked.txt
 echo junk >sub/untracked.txt
 clean
+run git lfs install --local
 run git fetch -v --prune -- origin refs/pull/1/head
 run git checkout -f "$PR_SHA"
 submodules
+lfs
 clean
 test "$(git rev-parse HEAD)" = "$PR_SHA"
 test -f pr.txt
 test ! -e untracked.txt
 test ! -e sub/untracked.txt
+test "$(cat lfs.dat)" = "$lfs_content"
 git diff --quiet
 
 # Job 3: git mirrors (BUILDKITE_GIT_MIRRORS_PATH): a mirror clone, updated,
@@ -87,12 +104,23 @@ run git checkout -f FETCH_HEAD
 test -f src/main.c
 test ! -e docs/index.md
 
-# Job 5: a shallow clone, then push a tag and a branch back.
+# Job 5: a shallow clone, then commit a new LFS file and push a tag and a
+# branch back. git-lfs's pre-push hook uploads the file's content.
 mkdir "$root/shallow" && cd "$root/shallow"
 run git clone -v --depth 1 --branch main -- "$REPO" .
 test "$(git rev-list --count HEAD)" = 1
+run git lfs install --local
+echo "pushed by $JOB" >pushed.dat
+run git add pushed.dat
+git cat-file -p :pushed.dat | grep -q "^version https://git-lfs.github.com/spec/v1"
+run git -c user.name=ci -c user.email=ci@example.com commit -m "Add pushed.dat"
 run git -c user.name=ci -c user.email=ci@example.com tag -a "ci-$JOB" -m ci
 run git push origin "ci-$JOB" "HEAD:refs/heads/ci-$JOB"
 run git ls-remote --exit-code origin "refs/tags/ci-$JOB" "refs/heads/ci-$JOB"
+# Drop the local copy and download it again from the server.
+rm -rf .git/lfs/objects pushed.dat
+run git lfs fetch origin "ci-$JOB"
+run git lfs checkout pushed.dat
+test "$(cat pushed.dat)" = "pushed by $JOB"
 
 rm -rf "$root"

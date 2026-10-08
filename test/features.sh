@@ -1,7 +1,7 @@
 #!/bin/sh
 # Exercise git features that depend on how the bundle was built (PCRE2,
 # iconv, zlib, hooks and editors through sh, helper programs in
-# libexec/git-core), inside a test image. POSIX sh.
+# libexec/git-core, git-lfs's filters), inside a test image. POSIX sh.
 set -eu
 
 check() {
@@ -104,11 +104,21 @@ check "credential-store"
 git help -a >/dev/null
 check "help -a"
 
-if git lfs version >/dev/null 2>&1; then
-	echo "git lfs unexpectedly works" >&2
-	exit 1
-fi
-check "no git lfs (not bundled)"
+# Git LFS with no server: the clean filter stores a pointer in git and the
+# content in .git/lfs, and the smudge filter (filter-process) restores it.
+git lfs install --local >/dev/null
+git lfs track '*.bin' >/dev/null
+echo "large file" >big.bin
+git add .gitattributes big.bin
+git cat-file -p :big.bin | grep -q "^version https://git-lfs.github.com/spec/v1"
+git commit -q -m lfs
+git lfs ls-files | grep -q " big.bin$"
+rm big.bin
+git checkout -- big.bin
+grep -qx "large file" big.bin
+test -z "$(git status --porcelain -- big.bin)"
+git lfs fsck >/dev/null
+check "git lfs track, clean and smudge filters, fsck"
 
 cd /
 rm -rf "$root"

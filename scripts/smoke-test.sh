@@ -8,6 +8,7 @@
 # Checks:
 #   - basics: version, templates, /etc/gitconfig, PATH order
 #   - every git binary uses mimalloc
+#   - git lfs works, and a git-lfs already in the image wins
 #   - HTTPS clone with no config, in images with and without a CA store
 #   - SSH clone with RSA, ECDSA and ed25519 keys, using the bundled ssh
 #   - an ssh already in the image wins over the bundled one
@@ -64,6 +65,17 @@ out=$(sh_in "$id:alpine" "cd $B/libexec/git-core"'
 [[ $out == *"git "* && $out == *git-remote-* ]] || die "mimalloc check missed git or the HTTP helper: $out"
 pass "mimalloc in every git binary: ${out% }"
 
+out=$(sh_in "$id:alpine" 'git lfs version')
+[[ $out == "git-lfs/"* ]] || die "git lfs version: $out"
+pass "$out"
+
+# git-lfs lives in fallback/bin, so one already on PATH wins, as ssh does.
+out=$(sh_in "$id:alpine" "printf '#!/bin/sh\necho image git-lfs\n' >/usr/local/bin/git-lfs
+	chmod +x /usr/local/bin/git-lfs
+	git lfs version")
+[[ $out == "image git-lfs" ]] || die "the image's git-lfs did not win: $out"
+pass "a git-lfs already in the image wins"
+
 echo "--- :lock: HTTPS clone with no config"
 # <name> <base> <expected SSL_CERT_FILE>; "-" means the image has no shell.
 while read -r name base want; do
@@ -75,7 +87,8 @@ while read -r name base want; do
 		docker run --rm --platform "$platform" -v "$id:/work" -e HOME=/work \
 			--entrypoint "$B/bin/git" "$id:$name" clone -q --depth 1 "$HTTPS_REPO" /work/repo
 		docker run --rm -v "$id:/work" busybox:1.37 test -f /work/repo/README
-		pass "$name: HTTPS clone"
+		docker run --rm --platform "$platform" --entrypoint "$B/bin/git" "$id:$name" lfs version >/dev/null
+		pass "$name: HTTPS clone, git lfs version"
 	else
 		got=$(sh_in "$id:$name" "git -c 'alias.e=!echo \"\$SSL_CERT_FILE\"' e")
 		[[ $got == "${want//@B@/$B}" ]] || die "$name: SSL_CERT_FILE=$got, want $want"

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Start the matrix test's git server: HTTPS (githttpd), SSH (sshd) and an HTTP
-# proxy (tinyproxy), all serving the same repositories.
+# proxy (tinyproxy), all serving the same repositories. githttpd is also the
+# Git LFS server; over SSH, git-lfs-authenticate sends git-lfs to it.
 #
 # Everything a client needs is written to /export, then /ready is created:
 #   ca.crt, ca.hash     private CA that signed the HTTPS certificate, and its
@@ -38,8 +39,20 @@ ssh-keygen -q -t ed25519 -N "" -C client -f /export/id_ed25519
 cp /export/id_ed25519.pub ~git/.ssh/authorized_keys
 echo "gitserver $(cut -d' ' -f1-2 /etc/ssh/ssh_host_ed25519_key.pub)" >/export/known_hosts
 
+# Over SSH, git-lfs asks git-lfs-authenticate where the LFS server is, then
+# uses that HTTPS URL with the credentials it returns, as on GitHub. The SSH
+# path /srv/git/<repo> is /auth/<repo> over HTTPS.
+token=$(printf '%s:%s' "$AUTH_USER" "$AUTH_PASS" | base64)
+cat >/usr/local/bin/git-lfs-authenticate <<EOF
+#!/bin/sh
+printf '{"href":"https://gitserver/auth/%s/info/lfs","header":{"Authorization":"Basic $token"}}\n' "\${1#/srv/git/}"
+EOF
+chmod 755 /usr/local/bin/git-lfs-authenticate
+
 # Repositories. main has a submodule with a relative URL, so the same repo
-# works over HTTPS, authenticated HTTPS and SSH.
+# works over HTTPS, authenticated HTTPS and SSH. lfs.dat is in Git LFS: the
+# commit has its pointer file and /srv/lfs has its content, so making it needs
+# no git-lfs.
 git config --system safe.directory '*'
 git config --system init.defaultBranch main
 git config --system user.name "Test"
@@ -58,6 +71,13 @@ mkdir -p src docs
 echo 'int main(void) { return 0; }' >src/main.c
 echo docs >docs/index.md
 echo unicode >"ünïcödé.txt"
+echo "stored in git lfs" >"$work/lfs.dat"
+oid=$(sha256sum "$work/lfs.dat" | cut -d' ' -f1)
+mkdir -p /srv/lfs
+cp "$work/lfs.dat" "/srv/lfs/$oid"
+printf 'version https://git-lfs.github.com/spec/v1\noid sha256:%s\nsize %s\n' \
+	"$oid" "$(wc -c <"$work/lfs.dat")" >lfs.dat
+echo '*.dat filter=lfs diff=lfs merge=lfs -text' >.gitattributes
 git add . && git commit -q -m "Grüße 🌍: first commit"
 git tag -a v1 -m v1
 git submodule -q add "$work/sub" sub
@@ -80,7 +100,7 @@ for r in /srv/git/*.git; do
 	git -C "$r" config uploadpack.allowAnySHA1InWant true
 	git -C "$r" config uploadpack.allowFilter true
 done
-chown -R git:git /srv/git ~git /etc/gitserver
+chown -R git:git /srv/git /srv/lfs ~git /etc/gitserver
 chmod 700 ~git/.ssh
 
 cat >/etc/tinyproxy.conf <<'EOF'

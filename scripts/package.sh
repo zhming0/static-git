@@ -1,7 +1,9 @@
 #!/bin/sh
 # Assemble the bundle and write the tarball, its checksum and a size report.
 #
-# Usage: package.sh <versions.env> <git-destdir> <ssh-dir> <launcher> <dist>
+# Usage: package.sh <versions.env> <git-destdir> <ssh-dir> <launcher> <git-lfs> <dist>
+#
+# Env: GO_VERSION   the Go that built the launcher and git-lfs, for VERSIONS
 #
 # Bundle layout (paths are relative to wherever the bundle is unpacked):
 #
@@ -9,11 +11,12 @@
 #   libexec/git-core/           real git and its helpers
 #   share/git-core/templates/
 #   fallback/bin/ssh            static OpenSSH client, last on PATH
+#   fallback/bin/git-lfs        static git-lfs, last on PATH
 #   etc/ssl/cacert.pem          CA bundle, used only if the image has none
 #   VERSIONS                    every component version
 #
-# ssh must never go into libexec/git-core: git prepends that directory to
-# PATH, so an ssh there would override the image's ssh.
+# ssh and git-lfs must never go into libexec/git-core: git looks there first
+# for "git lfs" and prepends it to PATH, so they would override the image's.
 # shellcheck disable=SC3040  # busybox ash supports pipefail
 set -eu -o pipefail
 
@@ -22,7 +25,9 @@ set -eu -o pipefail
 git_destdir=$2
 ssh_dir=$3
 launcher=$4
-dist=$5
+git_lfs=$5
+dist=$6
+: "${GO_VERSION:?}"
 
 case "$(uname -m)" in
 x86_64) arch=amd64 ;;
@@ -37,6 +42,7 @@ mkdir -p "$bundle/libexec" "$bundle/share"
 cp -a "$git_destdir/usr/libexec/git-core" "$bundle/libexec/"
 cp -a "$git_destdir/usr/share/git-core" "$bundle/share/"
 install -Dm755 "$ssh_dir/ssh" "$bundle/fallback/bin/ssh"
+install -Dm755 "$git_lfs" "$bundle/fallback/bin/git-lfs"
 install -Dm644 /etc/ssl/certs/ca-certificates.crt "$bundle/etc/ssl/cacert.pem"
 
 # imap-send belongs with send-email, which is out of scope, and it is one more
@@ -77,6 +83,8 @@ alpine=$(cat /etc/alpine-release)
 git=$GIT_VERSION
 curl=$CURL_VERSION
 openssh=$(echo "$OPENSSH_VERSION" | tr -d _)
+git-lfs=$GIT_LFS_VERSION
+go=$GO_VERSION
 openssl=$(apkver openssl-libs-static)
 zlib=$(apkver zlib-static)
 expat=$(apkver expat-static)

@@ -63,12 +63,25 @@ RUN test -z "$(gofmt -l .)" && go vet ./... && go test ./...
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
       go build -trimpath -ldflags='-s -w' -o /stage/launcher/git .
 
+# git-lfs is Go too, so it also cross-compiles on the build host.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS git-lfs
+ARG TARGETOS TARGETARCH
+COPY versions.env /build/versions.env
+COPY --from=sources /build/src/git-lfs-* /build/src/
+COPY scripts/build-git-lfs.sh /build/scripts/
+RUN /build/scripts/build-git-lfs.sh /build/versions.env /build/src /stage/git-lfs \
+      "$TARGETOS" "$TARGETARCH"
+
 FROM base AS bundle
+# Recorded in VERSIONS: it built the launcher and git-lfs.
+ARG GO_VERSION
 COPY --from=git /stage/git /stage/git
 COPY --from=openssh /stage/ssh /stage/ssh
 COPY --from=launcher /stage/launcher /stage/launcher
+COPY --from=git-lfs /stage/git-lfs /stage/git-lfs
 COPY scripts/package.sh /build/scripts/
-RUN /build/scripts/package.sh /build/versions.env /stage/git /stage/ssh /stage/launcher/git /dist
+RUN /build/scripts/package.sh /build/versions.env /stage/git /stage/ssh /stage/launcher/git \
+      /stage/git-lfs /dist
 
 FROM scratch AS dist
 COPY --from=bundle /dist/ /
