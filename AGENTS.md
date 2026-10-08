@@ -1,8 +1,9 @@
 # AGENTS.md
 
 Notes for coding agents working on this repository. Read [README.md](README.md)
-for what the bundle is and [docs/report.md](docs/report.md) for test results
-and known limits.
+for what the bundle is, [DEVELOPMENT.md](DEVELOPMENT.md) for how it is built
+and tested, and [docs/report.md](docs/report.md) for test results and known
+limits.
 
 ## What this is
 
@@ -97,7 +98,7 @@ The smoke and matrix tests clone from GitHub, so they need internet access.
 - Scripts that run inside test images (`test/*.sh`) must be POSIX sh: they
   run under busybox ash and dash too.
 - New matrix checks go in `scripts/matrix-test.sh`; update the table in
-  `docs/report.md` and the list in `README.md` to match.
+  `docs/report.md` and the list in `DEVELOPMENT.md` to match.
 
 ## CI (Buildkite)
 
@@ -131,5 +132,5 @@ The smoke and matrix tests clone from GitHub, so they need internet access.
 - One commit per PR. Keep the PR description up to date with what changed,
   what was tested and any change from the plan.
 - Do not commit `dist/`, `bench.md` or other build output.
-- When behaviour or results change, update `README.md` and `docs/report.md`
-  in the same PR.
+- When behaviour or results change, update `README.md`, `DEVELOPMENT.md` and
+  `docs/report.md` in the same PR.
