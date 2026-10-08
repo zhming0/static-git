@@ -26,6 +26,7 @@ RUN apk add --no-cache \
       expat-dev expat-static \
       pcre2-dev pcre2-static \
       nghttp2-dev nghttp2-static \
+      mimalloc2-dev \
       ca-certificates-bundle
 COPY versions.env /build/versions.env
 RUN . /build/versions.env && case "$(cat /etc/alpine-release)" in \

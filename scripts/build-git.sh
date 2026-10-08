@@ -24,6 +24,13 @@ curl_cflags=$(pkg-config --static --cflags libcurl)
 #
 # The musl knobs (NO_REGEX, NO_SYS_POLL_H, ICONV_OMITS_BOM) match Alpine's
 # own git package.
+#
+# mimalloc replaces musl's malloc, which is slow when several threads allocate
+# at once (index-pack during clone, grep). libmimalloc-insecure.a is Alpine's
+# build of upstream's default ("secure" adds guard pages and is slower).
+# EXTLIBS comes after git's objects on the link line and before the implicit
+# libc, so malloc, free and the rest resolve to mimalloc. The smoke test checks
+# that every git binary uses it.
 cat >config.mak <<EOF
 prefix = /usr
 gitexecdir = libexec/git-core
@@ -47,6 +54,7 @@ LDFLAGS = -static
 CURL_CONFIG = /opt/curl/bin/curl-config
 CURL_CFLAGS = $curl_cflags
 CURL_LDFLAGS = $curl_libs
+EXTLIBS += -lmimalloc-insecure
 EOF
 
 # Strip in the build tree: install then hardlinks the built-ins, and stripping
