@@ -72,13 +72,14 @@ you touch one.
   `test/gitserver/Dockerfile` has a `# renovate: datasource=... depName=...`
   comment on the line above it; keep that comment when editing the line, and
   add one for any new pin. git, curl, OpenSSH and git-lfs are looked up in the
-  Alpine branch on Repology (`depName=alpine_3_24/git`), so the comments name
-  the branch and must change with it.
+  Alpine branch's own package index (`datasource=apk`); the branch is set in
+  the apk `registryUrls` in `renovate.json5` and must change with
+  `ALPINE_VERSION`. Do not use Repology: the hosted app's lookups there
+  failed.
 - Renovate merges minor and patch updates by itself once CI passes, after a
-  3-day wait (`minimumReleaseAge`; git, curl, OpenSSH and git-lfs are exempt
-  because Repology has no release dates). The Alpine branch update and major
-  updates need a person. Any check CI runs is therefore also what lets an
-  update merge unattended.
+  3-day wait (`minimumReleaseAge`). The Alpine branch update and major updates
+  need a person. Any check CI runs is therefore also what lets an update merge
+  unattended.
 - Versions in `versions.env` use Alpine's spelling, so OpenSSH is `10.3_p1`.
   The scripts turn it into upstream's `10.3p1` with `tr -d _`.
 - Tools for CI and local work are pinned in `mise.toml`. Run `mise install`.
