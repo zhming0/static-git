@@ -4,6 +4,8 @@
 //	/<repo>.git        anonymous
 //	/auth/<repo>.git   needs HTTP basic auth (AUTH_USER, AUTH_PASS)
 //
+// Each also serves a Git LFS server at <repo>.git/info/lfs (see lfs.go).
+//
 // Every request is logged to stdout, so the test can check what the client
 // sent.
 package main
@@ -23,9 +25,10 @@ func main() {
 	}
 	user, pass := os.Getenv("AUTH_USER"), os.Getenv("AUTH_PASS")
 
+	lfs := &lfsServer{dir: "/srv/lfs"}
 	mux := http.NewServeMux()
-	mux.Handle("/auth/", http.StripPrefix("/auth", basicAuth(user, pass, backend)))
-	mux.Handle("/", backend)
+	mux.Handle("/auth/", http.StripPrefix("/auth", basicAuth(user, pass, withLFS(lfs, "/auth", backend))))
+	mux.Handle("/", withLFS(lfs, "", backend))
 
 	log.SetOutput(os.Stdout)
 	log.Fatal(http.ListenAndServeTLS(":443",

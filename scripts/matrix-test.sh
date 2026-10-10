@@ -8,12 +8,16 @@
 #
 # Checks:
 #   - distributions: CA store detection, HTTPS clone from GitHub, and the
-#     Buildkite agent's checkout commands over authenticated HTTPS
+#     Buildkite agent's checkout commands, with Git LFS, over authenticated
+#     HTTPS
 #   - private CA: the image's CA store, SSL_CERT_FILE, SSL_CERT_DIR,
-#     http.sslCAInfo, per-URL config, GIT_SSL_NO_VERIFY
-#   - HTTP proxy: https_proxy, HTTPS_PROXY, http.proxy, no_proxy
+#     http.sslCAInfo, per-URL config, GIT_SSL_NO_VERIFY, for both git and
+#     git-lfs
+#   - HTTP proxy: https_proxy, HTTPS_PROXY, http.proxy, no_proxy, for both
+#     git and git-lfs
 #   - safe.directory: every scope git trusts, and that it is still enforced
-#   - the agent's checkout commands over SSH with the bundled ssh
+#   - the agent's checkout commands, with Git LFS, over SSH with the bundled
+#     ssh
 #   - runtime: random UID, read-only root, symlink on PATH, path with spaces,
 #     empty environment
 #   - git features that depend on the build (test/features.sh)
@@ -64,8 +68,11 @@ creds=(
 	-e 'GIT_CONFIG_VALUE_0=!f() { echo username=agent; echo password=s3cret; }; f'
 )
 
-# Clone the private repo with whatever CA setup the command set up first.
-clone_private="cd /tmp && rm -rf r && git clone -q $PRIVATE_REPO r && test -f r/README"
+# Clone the private repo with whatever CA setup the command set up first,
+# then download its LFS file, so git-lfs (Go, not libcurl) must accept the
+# same setup.
+lfs_pull="git lfs install --local >/dev/null && git lfs pull && grep -qx 'stored in git lfs' lfs.dat"
+clone_private="cd /tmp && rm -rf r && git clone -q $PRIVATE_REPO r && cd r && test -f README && $lfs_pull"
 clone_github="cd /tmp && rm -rf g && git clone -q --depth 1 $GITHUB_REPO g && test -f g/README"
 
 echo "--- :linux: Distributions"
@@ -125,11 +132,14 @@ pass "GIT_SSL_NO_VERIFY"
 echo "--- :globe_with_meridians: HTTP proxy"
 # Only the server's container resolves git.internal, so these clones work
 # only through the proxy running there.
-internal="cd /tmp && rm -rf r && git clone -q https://git.internal/main.git r && test -f r/README"
+internal="cd /tmp && rm -rf r && git clone -q https://git.internal/main.git r && cd r && test -f README && $lfs_pull"
 sh_in "$c" "! GIT_SSL_CAINFO=/test/ca.crt git ls-remote https://git.internal/main.git >/dev/null 2>&1"
 run_in -e https_proxy=http://gitserver:8888 -e GIT_SSL_CAINFO=/test/ca.crt "$c" "$internal"
 docker exec "$id-server" grep -q "git.internal" /var/log/tinyproxy.log ||
 	die "the proxy did not see the request"
+# Not "docker logs | grep -q": grep exits early and pipefail fails the check.
+[[ $(docker logs "$id-server" 2>&1) == *"POST /main.git/info/lfs/objects/batch"* ]] ||
+	die "the LFS server did not see a batch request"
 pass "https_proxy"
 run_in -e HTTPS_PROXY=http://gitserver:8888 -e GIT_SSL_CAINFO=/test/ca.crt "$c" "$internal"
 pass "HTTPS_PROXY"
@@ -161,9 +171,10 @@ echo "--- :key: Agent checkout over SSH"
 ssh_setup='! command -v ssh >/dev/null
 	mkdir -p ~/.ssh && cp /test/id_ed25519 /test/known_hosts ~/.ssh/
 	chmod 700 ~/.ssh && chmod 600 ~/.ssh/id_ed25519'
+# git-lfs-authenticate sends git-lfs to the HTTPS server, so it needs the CA.
 for name in debian12 rocky9 busybox; do
 	agent_job "ssh-$name"
-	run_in "${job[@]}" -e REPO=git@gitserver:/srv/git/main.git "$id:$name" \
+	run_in "${job[@]}" -e REPO=git@gitserver:/srv/git/main.git -e GIT_SSL_CAINFO=/test/ca.crt "$id:$name" \
 		"$ssh_setup
 		/test/agent-checkout.sh"
 	pass "$name: agent checkout over SSH, default key and known_hosts"
@@ -172,7 +183,7 @@ done
 # and has no known_hosts. Plain "ssh" there still finds the bundled one, which
 # must record the host key itself.
 agent_job "ssh-accept-new"
-run_in "${job[@]}" -e REPO=git@gitserver:/srv/git/main.git \
+run_in "${job[@]}" -e REPO=git@gitserver:/srv/git/main.git -e GIT_SSL_CAINFO=/test/ca.crt \
 	-e 'GIT_SSH_COMMAND=ssh -i /tmp/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new' \
 	"$c" "install -m 600 /test/id_ed25519 /tmp/key && test ! -e ~/.ssh
 	/test/agent-checkout.sh
@@ -181,7 +192,7 @@ pass "agent checkout over SSH with GIT_SSH_COMMAND and accept-new"
 
 echo "--- :gear: Runtime environments"
 https_ca=(-e GIT_SSL_CAINFO=/test/ca.crt)
-clone_sub="cd /tmp && rm -rf r && git clone -q --recurse-submodules $PRIVATE_REPO r && test -f r/sub/sub.txt"
+clone_sub="cd /tmp && rm -rf r && git clone -q --recurse-submodules $PRIVATE_REPO r && cd r && test -f sub/sub.txt && $lfs_pull"
 run_in --user 12345:12345 "${https_ca[@]}" "$c" "$clone_sub"
 pass "random UID with no passwd entry and no writable HOME"
 run_in --read-only --tmpfs /tmp "${https_ca[@]}" "$c" "$clone_sub"

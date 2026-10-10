@@ -7,22 +7,25 @@ limits.
 
 ## What this is
 
-A self-contained git bundle (static git, static OpenSSH client, CA bundle,
-and a Go launcher at `bin/git`) that is unpacked into any Linux image, amd64
-or arm64. The output is one tarball per architecture, not a single binary.
+A self-contained git bundle (static git, static OpenSSH client, static
+git-lfs, CA bundle, and a Go launcher at `bin/git`) that is unpacked into any
+Linux image, amd64 or arm64. The output is one tarball per architecture, not
+a single binary.
 
 ## Rules the bundle must keep
 
 These are the point of the project. Do not break them, and add a test when
 you touch one.
 
-- **Fill gaps, never override.** The image's CA store, ssh, `/etc/gitconfig`
-  and every user setting must win over the bundle's fallbacks.
+- **Fill gaps, never override.** The image's CA store, ssh, git-lfs,
+  `/etc/gitconfig` and every user setting must win over the bundle's
+  fallbacks. The bundle writes no git config (not even `filter.lfs.*`).
 - The launcher only appends `<bundle>/fallback/bin` to the end of `PATH`, and
   sets `SSL_CERT_FILE` only when neither `SSL_CERT_FILE` nor `SSL_CERT_DIR` is
   set. It must never set `GIT_SSH_COMMAND`, `GIT_SSH` or `GIT_SSL_CAINFO`.
-- ssh must never go in `libexec/git-core`: git puts that directory first on
-  a child's `PATH`, so an ssh there would override the image's.
+- ssh and git-lfs must never go in `libexec/git-core`: git looks there first
+  for `git lfs` and puts it first on a child's `PATH`, so they would override
+  the image's. Both live in `fallback/bin`.
 - Never build git with `INSTALL_SYMLINKS`. It turns `libexec/git-core/git`
   into a link to `bin/git` (the launcher), and git then runs itself forever.
   `scripts/package.sh` rejects any symlink in the bundle.
@@ -37,7 +40,7 @@ you touch one.
 |---|---|
 | `versions.env` | Every pinned version. A version bump is a change here only. |
 | `renovate.json5` | Renovate config. Opens a pull request when a pinned version has an update. |
-| `keys/` | Release signing keys of git, curl and OpenSSH. `scripts/fetch-sources.sh` checks each source tarball's signature against them. |
+| `keys/` | Release signing keys of git, curl, OpenSSH and git-lfs. `scripts/fetch-sources.sh` checks each source tarball's signature against them. |
 | `Dockerfile`, `docker-bake.hcl` | The build. One bake target per arch. |
 | `scripts/build-*.sh`, `scripts/fetch-sources.sh`, `scripts/package.sh` | Run inside the Alpine build stages. POSIX sh. |
 | `launcher/` | The Go `bin/git`, with unit tests. |
@@ -51,29 +54,31 @@ you touch one.
 
 ## Versions
 
-- Follow one Alpine stable branch. git, curl and OpenSSH are built from
-  upstream source at the version that branch ships (its aports `APKBUILD`s).
-  Other libraries come from the branch's packages, not pinned to exact `-rN`
-  versions (Alpine deletes old ones).
+- Follow one Alpine stable branch. git, curl, OpenSSH and git-lfs are built
+  from upstream source at the version that branch ships (its aports
+  `APKBUILD`s). Other libraries come from the branch's packages, not pinned to
+  exact `-rN` versions (Alpine deletes old ones).
 - Source tarballs are checked by OpenPGP signature, not by checksum. Each must
   be signed by its own project's key in `keys/`, and the key's fingerprint is
-  pinned in `scripts/fetch-sources.sh`. A key file or fingerprint change needs
-  the new fingerprint confirmed from two independent upstream sources.
+  pinned in `scripts/fetch-sources.sh`. git-lfs signs a `sha256sums.asc` file
+  rather than the tarball; the script checks that signature, then the
+  tarball's sha256 against it. A key file or fingerprint change needs the new
+  fingerprint confirmed from two independent upstream sources.
 - `ALPINE_VERSION` in the `Dockerfile` must equal `versions.env` (the build
   checks). `GO_VERSION` in the `Dockerfile` must equal `mise.toml` (the
-  launcher CI step checks).
+  launcher CI step checks). That Go builds the launcher and git-lfs.
 - Renovate (the hosted Mend Renovate app) keeps these versions current. Each
   pinned version in `versions.env`, the `Dockerfile` and
   `test/gitserver/Dockerfile` has a `# renovate: datasource=... depName=...`
   comment on the line above it; keep that comment when editing the line, and
-  add one for any new pin. git, curl and OpenSSH are looked up in the Alpine
-  branch on Repology (`depName=alpine_3_24/git`), so the comments name the
-  branch and must change with it.
+  add one for any new pin. git, curl, OpenSSH and git-lfs are looked up in the
+  Alpine branch on Repology (`depName=alpine_3_24/git`), so the comments name
+  the branch and must change with it.
 - Renovate merges minor and patch updates by itself once CI passes, after a
-  3-day wait (`minimumReleaseAge`; git, curl and OpenSSH are exempt because
-  Repology has no release dates). The Alpine branch update and major updates
-  need a person. Any check CI runs is therefore also what lets an update merge
-  unattended.
+  3-day wait (`minimumReleaseAge`; git, curl, OpenSSH and git-lfs are exempt
+  because Repology has no release dates). The Alpine branch update and major
+  updates need a person. Any check CI runs is therefore also what lets an
+  update merge unattended.
 - Versions in `versions.env` use Alpine's spelling, so OpenSSH is `10.3_p1`.
   The scripts turn it into upstream's `10.3p1` with `tr -d _`.
 - Tools for CI and local work are pinned in `mise.toml`. Run `mise install`.

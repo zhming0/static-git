@@ -3,20 +3,22 @@
 Status of the bundle: what was tested, how fast it is, what does not work,
 and what to do next.
 
-Bundle: git 2.54.0, curl 8.22.0, OpenSSH 10.3p1, OpenSSL 3.5, mimalloc 2.2.7,
-built on Alpine 3.24 (musl), for linux/amd64 and linux/arm64.
+Bundle: git 2.54.0, curl 8.22.0, OpenSSH 10.3p1, git-lfs 3.7.1, OpenSSL 3.5,
+mimalloc 2.2.7, built on Alpine 3.24 (musl) and Go 1.27.1, for linux/amd64
+and linux/arm64.
 
 ## Summary
 
 - **It works everywhere we tried.** The smoke and matrix tests pass on amd64
   and arm64 (arm64 under QEMU) in 12 distribution images plus distroless and
   scratch, over HTTPS (public and private CA, through a proxy) and SSH,
-  with the Buildkite agent's checkout commands.
-- **It only fills gaps.** The image's CA store, ssh, `/etc/gitconfig` and
+  with the Buildkite agent's checkout commands, including Git LFS.
+- **It only fills gaps.** The image's CA store, ssh, git-lfs, `/etc/gitconfig` and
   every user setting we tested (`SSL_CERT_FILE`, `SSL_CERT_DIR`,
   `GIT_SSL_CAINFO`, `http.sslCAInfo`, `GIT_SSH_COMMAND`, proxies,
   `safe.directory`) win over the bundle's fallbacks.
-- **Size:** 28 MB tarball, 62 MB unpacked (amd64); 28 MB and 58 MB (arm64).
+- **Size:** 33 MB tarball, 76 MB unpacked (amd64); 33 MB and 71 MB (arm64).
+  git-lfs is 5 MB of the tarball and 13–14 MB unpacked.
 - **Speed:** git is linked with mimalloc instead of musl's `malloc`. With
   it, the bundle is 10–30% faster than Alpine's own git (5x on `grep`), and
   within 10% of Debian's glibc git on clones, checkout, `blame` and `grep`.
@@ -33,20 +35,24 @@ CI runs all of this on every build for both architectures
 | Area | Checks | Script |
 |---|---|---|
 | Basics | `--version`, templates, `/etc/gitconfig` is the system config, child `PATH` order, every git binary uses mimalloc | smoke |
+| git-lfs | `git lfs version` (also in distroless and scratch); a git-lfs already in the image wins | smoke |
 | HTTPS, no config | alpine, debian-slim, busybox, distroless, scratch | smoke |
 | CA precedence | no CA without the launcher; `GIT_SSL_CAINFO`, `http.sslCAInfo` win | smoke |
 | SSH | RSA, ECDSA, ed25519 keys through the bundled ssh; the image's ssh wins | smoke |
 | Distributions | Alpine 3.24, Debian 12/13 (with and without `ca-certificates`), Ubuntu 22.04/24.04, Rocky 9, UBI 9 minimal, Fedora 42, Amazon Linux 2023, openSUSE Leap 15.6, busybox: the right CA file is picked, GitHub clone, agent checkout over authenticated HTTPS | matrix |
-| Agent checkout | clone, clean, fetch, `checkout -f`, submodules (relative URL), a `refs/pull/N/head` commit on no branch, reuse of a dirty checkout, mirrors with `--reference`, sparse blobless clone, shallow clone, push of a tag and branch | `test/agent-checkout.sh` |
-| Private CA | unknown CA fails; the distro's own way of adding a CA (`update-ca-certificates`, `update-ca-trust`) works; `SSL_CERT_FILE`, `SSL_CERT_DIR`, `http.sslCAInfo`, `http.<url>.sslCAInfo`, `GIT_SSL_NO_VERIFY` | matrix |
-| Proxy | `https_proxy`, `HTTPS_PROXY`, `http.proxy`, `no_proxy`, to a host only the proxy can resolve | matrix |
+| Agent checkout | clone, clean, fetch, `checkout -f`, submodules (relative URL), a `refs/pull/N/head` commit on no branch, reuse of a dirty checkout, mirrors with `--reference`, sparse blobless clone, shallow clone, push of a tag and branch; the agent's LFS steps (`git lfs version`, `install --local`, `fetch`, `checkout`) and an LFS upload on push, downloaded again | `test/agent-checkout.sh` |
+| Private CA | unknown CA fails; the distro's own way of adding a CA (`update-ca-certificates`, `update-ca-trust`) works; `SSL_CERT_FILE`, `SSL_CERT_DIR`, `http.sslCAInfo`, `http.<url>.sslCAInfo`, `GIT_SSL_NO_VERIFY`; each for a clone and `git lfs pull` | matrix |
+| Proxy | `https_proxy`, `HTTPS_PROXY`, `http.proxy`, `no_proxy`, to a host only the proxy can resolve; each for a clone and `git lfs pull` | matrix |
 | safe.directory | repo owned by another user is refused; allowed from `/etc/gitconfig`, global config, `-c`, `GIT_CONFIG_COUNT`; repo config is ignored | matrix |
-| Agent checkout over SSH | bundled ssh with default key and `known_hosts`, in debian, rocky, busybox; the agent's `GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new"` with no `known_hosts` | matrix |
-| Runtime | random UID with no passwd entry (HTTPS), read-only root, symlink to `bin/git` on `PATH`, bundle path with a space, `env -i` | matrix |
-| Features | hooks, PCRE2 (`grep -P`), iconv, `archive`, `worktree`, `bundle`, `clone --no-local`, `gc`, `fsck`, `format-patch`/`am`, `rebase -i`, `bisect run`, `stash`, `credential-cache`, `credential-store` | `test/features.sh` |
+| Agent checkout over SSH | bundled ssh with default key and `known_hosts`, in debian, rocky, busybox; the agent's `GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new"` with no `known_hosts`; Git LFS through `git-lfs-authenticate` | matrix |
+| Runtime | random UID with no passwd entry (HTTPS), read-only root, symlink to `bin/git` on `PATH`, bundle path with a space, `env -i`; all but `env -i` also run `git lfs pull` | matrix |
+| Features | hooks, PCRE2 (`grep -P`), iconv, `archive`, `worktree`, `bundle`, `clone --no-local`, `gc`, `fsck`, `format-patch`/`am`, `rebase -i`, `bisect run`, `stash`, `credential-cache`, `credential-store`, git-lfs's clean and smudge filters | `test/features.sh` |
 
 The matrix test uses a local git server (`test/gitserver`): HTTPS from
-`git-http-backend` with a private CA and basic auth, sshd, and tinyproxy.
+`git-http-backend` with a private CA and basic auth, sshd, tinyproxy, and a
+small Git LFS server (the batch API with basic transfers) in the same HTTPS
+server. Over SSH, the server's `git-lfs-authenticate` points git-lfs at the
+HTTPS one with credentials, as GitHub does.
 Only GitHub clones need the internet. It takes about 40 s on amd64 and
 5 minutes on arm64 under QEMU.
 
@@ -143,6 +149,34 @@ Costs, measured with GNU time (peak RSS of the largest process):
 - One more library to keep up to date. It comes from the same Alpine branch
   as the others, and its version is in `VERSIONS`.
 
+## git-lfs
+
+git-lfs 3.7.1, the version Alpine 3.24 ships, built with the pinned Go and
+cgo off, so it is static. The source is the release's `git-lfs-v3.7.1.tar.gz`,
+checked against the release's signed `sha256sums.asc`; it has the same files
+as the GitHub archive Alpine builds from. Its Go modules are downloaded during
+the build and checked against its `go.sum`. `git lfs help` works; translations are left out, as for git.
+
+- **Where it is.** `fallback/bin/git-lfs`, next to ssh, for the same reason:
+  git looks for `git-lfs` in `libexec/git-core` first, then `PATH`, so a
+  git-lfs already in the image wins. Filters and hooks that run
+  `git-lfs` find it the same way.
+- **No filters by default.** The bundle does not write any config, so
+  `filter.lfs.*` comes from the image or the user. The Buildkite agent runs
+  `git lfs install --local` itself when `BUILDKITE_GIT_LFS_ENABLED=true`.
+  Elsewhere, run `git lfs install` (global) or `git lfs install --local`.
+- **CA certificates.** git-lfs uses Go's TLS, not libcurl. Go reads the
+  `SSL_CERT_FILE` the launcher sets, so it trusts the same store as git.
+  `GIT_SSL_CAINFO`, `http.sslCAInfo` (also per URL), `GIT_SSL_CAPATH` and
+  `http.sslCAPath` replace that store, as they do for git.
+- **Proxies and credentials** work as for git: `http.proxy`, `https_proxy`,
+  `no_proxy`, and git's credential helpers (git-lfs runs `git credential`).
+- **DNS** is Go's own resolver, which reads `/etc/hosts` and
+  `/etc/resolv.conf`, like musl.
+- **SSH remotes.** git-lfs tries `git-lfs-transfer` on the server, then
+  `git-lfs-authenticate`, through the same ssh git uses.
+- **Size.** 14 MB unpacked, 5 MB of the tarball (amd64).
+
 ## Known limits
 
 Unchanged from the earlier PR, plus what the matrix test found:
@@ -154,13 +188,12 @@ Unchanged from the earlier PR, plus what the matrix test found:
   `StrictHostKeyChecking=accept-new` instead of `ssh-keyscan`, and the
   bundled ssh handles that. SSH commit signing (`gpg.format=ssh`) needs
   `ssh-keygen` from the image.
-- **No git-lfs.** With `BUILDKITE_GIT_LFS_ENABLED=true` the agent's checkout
-  fails fast on `git lfs version`.
 - **No man pages or translations.** `git help <cmd>` and `git <cmd> --help`
   fail; `git <cmd> -h` prints the usage.
 - **musl has no NSS.** Host names come from `/etc/hosts` and DNS only.
 - **The launcher's `SSL_CERT_FILE` is inherited** by hooks and tools that git
-  runs. It points at the image's own store whenever there is one.
+  runs, including git-lfs. It points at the image's own store whenever there
+  is one.
 
 ## Recommendations
 

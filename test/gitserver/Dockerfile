@@ -7,7 +7,7 @@ ARG GO_VERSION=1.27.1
 
 FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS build
 WORKDIR /src
-COPY go.mod main.go ./
+COPY go.mod *.go ./
 RUN CGO_ENABLED=0 go build -trimpath -o /githttpd .
 
 FROM alpine:${ALPINE_VERSION}
