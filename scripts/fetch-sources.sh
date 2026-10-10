@@ -51,7 +51,8 @@ download "$curl"
 download "$curl.asc"
 verify curl 27EDEAF22F3ABCEB50DB9A125CC908FDB71E12C2 "${curl##*/}.asc" "${curl##*/}"
 
-openssh=https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-${OPENSSH_VERSION}.tar.gz
+# versions.env has Alpine's spelling (10.3_p1); upstream's is 10.3p1.
+openssh=https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-$(echo "$OPENSSH_VERSION" | tr -d _).tar.gz
 download "$openssh"
 download "$openssh.asc"
 verify openssh 7168B983815A5EEF59A4ADFD2A3F414E736060BA "${openssh##*/}.asc" "${openssh##*/}"

@@ -6,7 +6,9 @@
 #
 # Versions live in versions.env. ALPINE_VERSION must match it; the base stage
 # checks that. GO_VERSION must match mise.toml; the launcher CI step checks that.
+# renovate: datasource=docker depName=alpine
 ARG ALPINE_VERSION=3.24
+# renovate: datasource=golang-version depName=go
 ARG GO_VERSION=1.27.1
 
 # Sources are architecture independent, so fetch them once on the build host
