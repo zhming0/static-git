@@ -1,0 +1,78 @@
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: ['config:recommended'],
+  // config:recommended skips test/, but test/gitserver/Dockerfile pins the same
+  // Alpine and Go versions as the main Dockerfile.
+  ignorePaths: ['**/node_modules/**'],
+  // Wait until a version has been out for 3 days, so a broken or malicious
+  // release has time to be found and pulled before we pick it up.
+  minimumReleaseAge: '3 days',
+  customManagers: [
+    {
+      // Lines marked with a comment like
+      //   # renovate: datasource=repology depName=alpine_3_24/git
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^versions\\.env$/',
+        '/^Dockerfile$/',
+        '/^test/gitserver/Dockerfile$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n(?:ARG )?[A-Z_]+=(?<currentValue>\\S+)\\n',
+      ],
+    },
+  ],
+  packageRules: [
+    {
+      // Merged only when CI (buildkite/static-git, required on main) passes.
+      // Merging does not release: the release step waits for a manual
+      // unblock. Major updates still need a person.
+      matchUpdateTypes: ['minor', 'patch'],
+      automerge: true,
+    },
+    {
+      // The FROM lines are built from the ARGs above them, which the custom
+      // manager already updates. Updating FROM lines too would fight it.
+      matchManagers: ['dockerfile'],
+      matchFileNames: ['Dockerfile', 'test/gitserver/Dockerfile'],
+      enabled: false,
+    },
+    {
+      // git, curl and OpenSSH follow one Alpine stable branch, so a version
+      // only changes when that branch ships a new one. Bump them together.
+      // Repology reports Alpine's package version (2.54.0-r0); drop the
+      // Alpine revision.
+      // Repology gives no release dates, and without one minimumReleaseAge
+      // would hold these updates forever. Alpine packaging them for a stable
+      // branch is already a delay and a review.
+      matchDatasources: ['repology'],
+      groupName: 'Alpine branch packages',
+      extractVersion: '^(?<version>.+)-r\\d+$',
+      minimumReleaseAge: null,
+    },
+    {
+      // Alpine writes OpenSSH versions as 10.3_p1.
+      matchDatasources: ['repology'],
+      matchDepNames: ['*/openssh'],
+      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)_p(?<patch>\\d+)$',
+    },
+    {
+      // GO_VERSION in both Dockerfiles must equal mise.toml's go.
+      matchDepNames: ['go'],
+      groupName: 'Go',
+    },
+    {
+      // Alpine branches are tagged 3.24, 3.25 and so on. Ignore patch tags
+      // (3.24.1) and date tags. A new branch counts as a minor update, but it
+      // needs manual changes, so it is never merged automatically.
+      matchDatasources: ['docker'],
+      matchDepNames: ['alpine'],
+      groupName: 'Alpine branch',
+      automerge: false,
+      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)$',
+      prBodyNotes: [
+        'Moving to a new Alpine branch needs manual changes before merging: change `alpine_3_XX` in the `# renovate:` comments in `versions.env` to the new branch, set git, curl and OpenSSH to the versions that branch ships, and check that a `golang:<GO_VERSION>-alpine<new branch>` image exists.',
+      ],
+    },
+  ],
+}

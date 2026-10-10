@@ -128,3 +128,54 @@ signing key. When it does, export only the new key into `keys/` with
 the fingerprint in `fetch-sources.sh`, and confirm the fingerprint from two
 independent upstream sources (for example the project's download page and its
 maintainer's GitHub or kernel.org key).
+
+### Renovate
+
+The [Mend Renovate app](https://github.com/apps/renovate) reads
+[`renovate.json5`](renovate.json5) and opens pull requests for updates. Each
+pin it manages has a comment on the line above that says where to look it up:
+
+```sh
+# renovate: datasource=repology depName=alpine_3_24/git
+GIT_VERSION=2.54.0
+```
+
+| Pull request | Changes | Source |
+|---|---|---|
+| Alpine branch packages | `GIT_VERSION`, `CURL_VERSION`, `OPENSSH_VERSION` together | The Alpine branch's packages on [Repology](https://repology.org), so only versions that branch ships |
+| Go | `GO_VERSION` in both Dockerfiles and `go` in `mise.toml` together | Go releases |
+| Alpine branch | `ALPINE_VERSION` in `versions.env` and both Dockerfiles | `alpine` image tags like `3.25` |
+
+Renovate also updates pins it finds without a comment, such as the GitHub CLI
+in `mise.toml`, and lists everything it tracks in a "Dependency Dashboard"
+issue.
+
+Renovate waits until a new version is 3 days old before opening its pull
+request (`minimumReleaseAge`), so a broken or malicious release has time to be
+found first. Updates still waiting are listed under "Pending Status Checks" on
+the dashboard. git, curl and OpenSSH are exempt: Repology gives no release
+dates, so the wait would hold them forever, and Alpine packaging them for a
+stable branch is already a delay and a review.
+
+Minor and patch updates are merged automatically once the
+`buildkite/static-git` check passes; `main` requires that check. The Alpine
+branch pull request and major updates are never merged automatically. Merging
+does not publish anything: a release still needs the manual "Release" step on
+the `main` build.
+
+Versions are written the way Alpine writes them, so OpenSSH is `10.3_p1`; the
+build scripts turn that into upstream's `10.3p1`.
+
+An Alpine branch pull request is a reminder, not a finished change. Before
+merging it, change `alpine_3_XX` in the comments in `versions.env` to the new
+branch, set git, curl and OpenSSH to the versions that branch ships, and check
+that a `golang:<GO_VERSION>-alpine<branch>` image exists.
+
+To check the config, or see what Renovate would update, without a pull request:
+
+```sh
+npm install -g renovate
+renovate-config-validator --no-global renovate.json5
+# Reads only committed files.
+LOG_LEVEL=debug renovate --platform=local --dry-run=lookup
+```

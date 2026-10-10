@@ -36,6 +36,7 @@ you touch one.
 | Path | What |
 |---|---|
 | `versions.env` | Every pinned version. A version bump is a change here only. |
+| `renovate.json5` | Renovate config. Opens a pull request when a pinned version has an update. |
 | `keys/` | Release signing keys of git, curl and OpenSSH. `scripts/fetch-sources.sh` checks each source tarball's signature against them. |
 | `Dockerfile`, `docker-bake.hcl` | The build. One bake target per arch. |
 | `scripts/build-*.sh`, `scripts/fetch-sources.sh`, `scripts/package.sh` | Run inside the Alpine build stages. POSIX sh. |
@@ -61,6 +62,20 @@ you touch one.
 - `ALPINE_VERSION` in the `Dockerfile` must equal `versions.env` (the build
   checks). `GO_VERSION` in the `Dockerfile` must equal `mise.toml` (the
   launcher CI step checks).
+- Renovate (the hosted Mend Renovate app) keeps these versions current. Each
+  pinned version in `versions.env`, the `Dockerfile` and
+  `test/gitserver/Dockerfile` has a `# renovate: datasource=... depName=...`
+  comment on the line above it; keep that comment when editing the line, and
+  add one for any new pin. git, curl and OpenSSH are looked up in the Alpine
+  branch on Repology (`depName=alpine_3_24/git`), so the comments name the
+  branch and must change with it.
+- Renovate merges minor and patch updates by itself once CI passes, after a
+  3-day wait (`minimumReleaseAge`; git, curl and OpenSSH are exempt because
+  Repology has no release dates). The Alpine branch update and major updates
+  need a person. Any check CI runs is therefore also what lets an update merge
+  unattended.
+- Versions in `versions.env` use Alpine's spelling, so OpenSSH is `10.3_p1`.
+  The scripts turn it into upstream's `10.3p1` with `tr -d _`.
 - Tools for CI and local work are pinned in `mise.toml`. Run `mise install`.
 
 ## Build and test

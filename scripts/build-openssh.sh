@@ -7,8 +7,10 @@ set -eu
 . "$1"
 cd "$2"
 out=$3
-tar xf "openssh-${OPENSSH_VERSION}.tar.gz"
-cd "openssh-${OPENSSH_VERSION}"
+# versions.env has Alpine's spelling (10.3_p1); upstream's is 10.3p1.
+version=$(echo "$OPENSSH_VERSION" | tr -d _)
+tar xf "openssh-${version}.tar.gz"
+cd "openssh-${version}"
 
 # OpenSSL stays linked in so RSA and ECDSA keys keep working. sysconfdir is
 # /etc/ssh, so the image's ssh_config and the user's ~/.ssh are read as usual.
