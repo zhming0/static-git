@@ -12,10 +12,11 @@ ARG GO_VERSION=1.27.1
 # Sources are architecture independent, so fetch them once on the build host
 # instead of under emulation.
 FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS sources
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl gpg gpgv xz
 COPY versions.env /build/versions.env
+COPY keys/ /build/keys/
 COPY scripts/fetch-sources.sh /build/scripts/
-RUN /build/scripts/fetch-sources.sh /build/versions.env /build/src
+RUN /build/scripts/fetch-sources.sh /build/versions.env /build/keys /build/src
 
 # Toolchain and the static libraries everything links against.
 FROM alpine:${ALPINE_VERSION} AS base

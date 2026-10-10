@@ -35,7 +35,8 @@ you touch one.
 
 | Path | What |
 |---|---|
-| `versions.env` | Every pinned version and source checksum. A version bump is a change here. |
+| `versions.env` | Every pinned version. A version bump is a change here only. |
+| `keys/` | Release signing keys of git, curl and OpenSSH. `scripts/fetch-sources.sh` checks each source tarball's signature against them. |
 | `Dockerfile`, `docker-bake.hcl` | The build. One bake target per arch. |
 | `scripts/build-*.sh`, `scripts/fetch-sources.sh`, `scripts/package.sh` | Run inside the Alpine build stages. POSIX sh. |
 | `launcher/` | The Go `bin/git`, with unit tests. |
@@ -50,10 +51,13 @@ you touch one.
 ## Versions
 
 - Follow one Alpine stable branch. git, curl and OpenSSH are built from
-  upstream source at the version that branch ships; the checksums in
-  `versions.env` must match the branch's aports `APKBUILD`s. Other libraries
-  come from the branch's packages, not pinned to exact `-rN` versions (Alpine
-  deletes old ones).
+  upstream source at the version that branch ships (its aports `APKBUILD`s).
+  Other libraries come from the branch's packages, not pinned to exact `-rN`
+  versions (Alpine deletes old ones).
+- Source tarballs are checked by OpenPGP signature, not by checksum. Each must
+  be signed by its own project's key in `keys/`, and the key's fingerprint is
+  pinned in `scripts/fetch-sources.sh`. A key file or fingerprint change needs
+  the new fingerprint confirmed from two independent upstream sources.
 - `ALPINE_VERSION` in the `Dockerfile` must equal `versions.env` (the build
   checks). `GO_VERSION` in the `Dockerfile` must equal `mise.toml` (the
   launcher CI step checks).
