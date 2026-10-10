@@ -109,3 +109,22 @@ follows one Alpine stable branch: git, curl and OpenSSH are built from upstream
 source at the version that branch ships; OpenSSL, zlib, expat, pcre2, nghttp2,
 mimalloc and the CA bundle are that branch's packages. The exact package
 versions used are recorded in each bundle's `VERSIONS` file.
+
+The git, curl and OpenSSH source tarballs are checked by their OpenPGP
+signatures, not by a checksum per version. Each project signs its releases,
+and [`scripts/fetch-sources.sh`](scripts/fetch-sources.sh) checks each tarball
+against its own project's key in [`keys/`](keys/):
+
+| Project | Signer | Key fingerprint |
+|---|---|---|
+| git | Junio C Hamano | `96E0 7AF2 5771 9559 80DA  D100 20D0 4E5A 7136 60A7` |
+| curl | Daniel Stenberg | `27ED EAF2 2F3A BCEB 50DB  9A12 5CC9 08FD B71E 12C2` |
+| OpenSSH | Damien Miller | `7168 B983 815A 5EEF 59A4  ADFD 2A3F 414E 7360 60BA` |
+
+So a version bump is only a change to `versions.env`; the build fails if the
+new tarball is not signed by the expected key. A project rarely changes its
+signing key. When it does, export only the new key into `keys/` with
+`gpg --armor --export-options export-minimal --export <fingerprint>`, update
+the fingerprint in `fetch-sources.sh`, and confirm the fingerprint from two
+independent upstream sources (for example the project's download page and its
+maintainer's GitHub or kernel.org key).
