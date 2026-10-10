@@ -10,7 +10,7 @@
   customManagers: [
     {
       // Lines marked with a comment like
-      //   # renovate: datasource=repology depName=alpine_3_24/git
+      //   # renovate: datasource=apk depName=git
       customType: 'regex',
       managerFilePatterns: [
         '/^versions\\.env$/',
@@ -39,23 +39,18 @@
     },
     {
       // git, curl, OpenSSH and git-lfs follow one Alpine stable branch, so a
-      // version only changes when that branch ships a new one. Bump them
-      // together.
-      // Repology reports Alpine's package version (2.54.0-r0); drop the
-      // Alpine revision.
-      // Repology gives no release dates, and without one minimumReleaseAge
-      // would hold these updates forever. Alpine packaging them for a stable
-      // branch is already a delay and a review.
-      matchDatasources: ['repology'],
+      // version only changes when that branch ships a new one. Read that
+      // branch's own package index (APKINDEX) and bump them together. git-lfs
+      // is in community, the others in main. Change v3.24 here when moving to
+      // a new Alpine branch.
+      // Alpine's versions carry a package revision (2.54.0-r0); drop it, so
+      // an Alpine-only rebuild is not an update.
+      matchDatasources: ['apk'],
+      registryUrls: [
+        'https://dl-cdn.alpinelinux.org/alpine?branch=v3.24&components=main,community&arch=x86_64',
+      ],
       groupName: 'Alpine branch packages',
       extractVersion: '^(?<version>.+)-r\\d+$',
-      minimumReleaseAge: null,
-    },
-    {
-      // Alpine writes OpenSSH versions as 10.3_p1.
-      matchDatasources: ['repology'],
-      matchDepNames: ['*/openssh'],
-      versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)_p(?<patch>\\d+)$',
     },
     {
       // GO_VERSION in both Dockerfiles must equal mise.toml's go.
@@ -72,7 +67,7 @@
       automerge: false,
       versioning: 'regex:^(?<major>\\d+)\\.(?<minor>\\d+)$',
       prBodyNotes: [
-        'Moving to a new Alpine branch needs manual changes before merging: change `alpine_3_XX` in the `# renovate:` comments in `versions.env` to the new branch, set git, curl, OpenSSH and git-lfs to the versions that branch ships, and check that a `golang:<GO_VERSION>-alpine<new branch>` image exists.',
+        'Moving to a new Alpine branch needs manual changes before merging: change `branch=v3.XX` in the apk `registryUrls` in `renovate.json5` to the new branch, set git, curl, OpenSSH and git-lfs in `versions.env` to the versions that branch ships, and check that a `golang:<GO_VERSION>-alpine<new branch>` image exists.',
       ],
     },
   ],

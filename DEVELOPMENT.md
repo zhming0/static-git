@@ -159,13 +159,13 @@ The [Mend Renovate app](https://github.com/apps/renovate) reads
 pin it manages has a comment on the line above that says where to look it up:
 
 ```sh
-# renovate: datasource=repology depName=alpine_3_24/git
+# renovate: datasource=apk depName=git
 GIT_VERSION=2.54.0
 ```
 
 | Pull request | Changes | Source |
 |---|---|---|
-| Alpine branch packages | `GIT_VERSION`, `CURL_VERSION`, `OPENSSH_VERSION`, `GIT_LFS_VERSION` together | The Alpine branch's packages on [Repology](https://repology.org), so only versions that branch ships |
+| Alpine branch packages | `GIT_VERSION`, `CURL_VERSION`, `OPENSSH_VERSION`, `GIT_LFS_VERSION` together | The Alpine branch's own package index on `dl-cdn.alpinelinux.org`, so only versions that branch ships |
 | Go | `GO_VERSION` in both Dockerfiles and `go` in `mise.toml` together | Go releases |
 | Alpine branch | `ALPINE_VERSION` in `versions.env` and both Dockerfiles | `alpine` image tags like `3.25` |
 
@@ -176,9 +176,8 @@ issue.
 Renovate waits until a new version is 3 days old before opening its pull
 request (`minimumReleaseAge`), so a broken or malicious release has time to be
 found first. Updates still waiting are listed under "Pending Status Checks" on
-the dashboard. git, curl, OpenSSH and git-lfs are exempt: Repology gives no
-release dates, so the wait would hold them forever, and Alpine packaging them
-for a stable branch is already a delay and a review.
+the dashboard. For git, curl, OpenSSH and git-lfs the wait counts from the
+date Alpine built the package.
 
 Minor and patch updates are merged automatically once the
 `buildkite/static-git` check passes; `main` requires that check. The Alpine
@@ -190,9 +189,10 @@ Versions are written the way Alpine writes them, so OpenSSH is `10.3_p1`; the
 build scripts turn that into upstream's `10.3p1`.
 
 An Alpine branch pull request is a reminder, not a finished change. Before
-merging it, change `alpine_3_XX` in the comments in `versions.env` to the new
-branch, set git, curl, OpenSSH and git-lfs to the versions that branch ships,
-and check that a `golang:<GO_VERSION>-alpine<branch>` image exists.
+merging it, change `branch=v3.XX` in the apk `registryUrls` in
+`renovate.json5` to the new branch, set git, curl, OpenSSH and git-lfs in
+`versions.env` to the versions that branch ships, and check that a
+`golang:<GO_VERSION>-alpine<branch>` image exists.
 
 To check the config, or see what Renovate would update, without a pull request:
 
