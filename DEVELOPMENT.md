@@ -8,6 +8,7 @@ are in [docs/report.md](docs/report.md).
 
 ```
 bin/git                     launcher (static Go)
+bin/static-git-install-ca   explicit system CA installer (hardlink to launcher)
 libexec/git-core/           real git and its helpers, static musl
 share/git-core/templates/
 fallback/bin/ssh            static OpenSSH client
@@ -29,6 +30,14 @@ VERSIONS                    every component version
 It never sets `GIT_SSH_COMMAND` or `GIT_SSL_CAINFO`. ssh and git-lfs are never
 put in `libexec/git-core`, because git looks there first and prepends that
 directory to `PATH`.
+
+The same static Go binary also handles `bin/static-git-install-ca`, selected
+by its invoked name. Only this explicit helper writes outside the bundle:
+when standard CA files and non-empty CA directories are absent, it creates
+`/etc/ssl/certs/ca-certificates.crt` with exclusive creation, never overwrite.
+It needs root and a writable target, but no shell. The source path
+`etc/ssl/cacert.pem` is a stable interface for integrators who copy it themselves.
+The launcher's normal environment selection is unchanged.
 
 git is built with `RUNTIME_PREFIX`, so the bundle can be unpacked anywhere, and
 with an absolute `sysconfdir=/etc`, so the image's `/etc/gitconfig` (for
@@ -98,6 +107,10 @@ checks:
   through `git-lfs-authenticate`.
 - A random UID, a read-only root, a symlink to `bin/git` on `PATH`, a bundle
   path with a space, and an empty environment.
+- Opt-in system CA installation: Go, curl and OpenSSL TLS fail without a
+  store and work after installation, existing bundle files and directory
+  stores stay untouched, read-only and non-root installs fail clearly, and
+  the helper works in `scratch` without a shell.
 - Build-dependent features (`test/features.sh`): PCRE2, iconv, hooks,
   `rebase -i`, `gc`, `credential-cache`, git-lfs's filters, and more.
 

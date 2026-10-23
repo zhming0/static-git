@@ -1,6 +1,7 @@
 // Command git is the bundle's entry point, installed as <bundle>/bin/git. It
 // adds ssh and CA certificate fallbacks at the lowest priority (see
 // fallbackEnv), then replaces itself with <bundle>/libexec/git-core/git.
+// Invoked as static-git-install-ca, it explicitly installs missing system CAs.
 package main
 
 import (
@@ -18,6 +19,14 @@ func main() {
 	}
 	// <bundle>/bin/git -> <bundle>
 	bundle := filepath.Dir(filepath.Dir(self))
+	if filepath.Base(os.Args[0]) == "static-git-install-ca" {
+		if err := installSystemCA(bundle); err != nil {
+			fmt.Fprintf(os.Stderr, "static-git-install-ca: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	realGit := filepath.Join(bundle, "libexec", "git-core", "git")
 
 	env := fallbackEnv(os.Environ(), bundle, isFile)
