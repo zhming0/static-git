@@ -10,4 +10,4 @@ go = "1.27.3"
 
 # Only the release step needs the GitHub CLI. The aqua registry entry for it
 # fails attestation verification, so install it directly from GitHub instead.
-"github:cli/cli" = "2.102.0"
+"github:cli/cli" = "2.102.1"
