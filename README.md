@@ -41,10 +41,10 @@ The bundle is meant to be laid over an existing image or machine as one
 directory. To add `git` and leave everything else as it was:
 
 1. **Keep it in its own directory**, such as `/opt/static-git`. Do not unpack
-   it into `/` or `/usr`. Nothing outside that directory is written or needed,
-   so removing it is `rm -rf /opt/static-git`. It can be read-only.
+   it into `/` or `/usr`. By default, nothing outside that directory is written
+   or needed, so removing it is `rm -rf /opt/static-git`. It can be read-only.
 2. **Expose only `bin/git`.** Run it by full path, add `<bundle>/bin` to the
-   end of `PATH` (`bin/` holds nothing else), or symlink it into a directory
+   end of `PATH`, or symlink it into a directory
    already on `PATH`. Adding it to the end of `PATH` lets an image's own git
    win; put it first if you always want the bundle's git.
 3. **Do not put `libexec/git-core` or `fallback/bin` on `PATH`**, and do not
@@ -73,6 +73,39 @@ docker run -v /opt/static-git:/opt/static-git:ro your-image /opt/static-git/bin/
 
 In Kubernetes, an init container can copy the bundle into a shared
 `emptyDir` volume that the main container mounts read-only.
+
+### Optional system CA installation
+
+Normally the bundled CA certificates apply only to git and its children.
+Other programs, including Go programs, see no change. To fill an image's
+missing system CA store for those programs too, explicitly run as root:
+
+```sh
+/opt/static-git/bin/static-git-install-ca
+```
+
+The helper needs no shell or other tools, and works in `scratch`. It copies
+the bundled certificates to `/etc/ssl/certs/ca-certificates.crt` only if no
+standard system store exists. It checks Debian/Ubuntu/Alpine, RHEL/Fedora,
+SUSE and OpenSSL bundle paths and directory stores. Any existing bundle
+file (even empty or a dangling symlink), or any non-empty CA directory,
+causes a successful skip; it never overwrites or merges certificates.
+It prints the installed path or why it skipped. Inspection errors, a
+non-root install or a read-only target produce a clear error and nonzero exit.
+Empty CA directories do not prevent installation.
+
+This is the only opt-in exception to writing nothing outside the bundle.
+Run it during image construction or before starting TLS clients (some cache
+their system roots). Removing the bundle does **not** remove the installed
+copy; it is a snapshot, not a link, and is not refreshed automatically.
+It does not change `SSL_CERT_FILE`, `SSL_CERT_DIR` or application-specific
+trust settings; those still take precedence. Applications with other
+compiled-in CA locations may need their own configuration.
+
+`<bundle>/etc/ssl/cacert.pem` is a **stable public path** to the PEM CA bundle.
+Integrators can copy it themselves instead of using the helper, provided
+they preserve any existing system trust store. No automatic installation
+occurs when unpacking the bundle or running `bin/git`.
 
 ### Git LFS
 

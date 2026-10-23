@@ -38,6 +38,7 @@ CI runs all of this on every build for both architectures
 | git-lfs | `git lfs version` (also in distroless and scratch); a git-lfs already in the image wins | smoke |
 | HTTPS, no config | alpine, debian-slim, busybox, distroless, scratch | smoke |
 | CA precedence | no CA without the launcher; `GIT_SSL_CAINFO`, `http.sslCAInfo` win | smoke |
+| Opt-in system CA installer | No store: Go, curl and OpenSSL TLS fail before installation and succeed after it without overrides; existing CA files, directory stores and dangling links stay untouched; read-only and non-root installs fail clearly; helper runs in `scratch` without a shell | matrix |
 | SSH | RSA, ECDSA, ed25519 keys through the bundled ssh; the image's ssh wins | smoke |
 | Distributions | Alpine 3.24, Debian 12/13 (with and without `ca-certificates`), Ubuntu 22.04/24.04, Rocky 9, UBI 9 minimal, Fedora 42, Amazon Linux 2023, openSUSE Leap 15.6, busybox: the right CA file is picked, GitHub clone, agent checkout over authenticated HTTPS | matrix |
 | Agent checkout | clone, clean, fetch, `checkout -f`, submodules (relative URL), a `refs/pull/N/head` commit on no branch, reuse of a dirty checkout, mirrors with `--reference`, sparse blobless clone, shallow clone, push of a tag and branch; the agent's LFS steps (`git lfs version`, `install --local`, `fetch`, `checkout`) and an LFS upload on push, downloaded again | `test/agent-checkout.sh` |
@@ -181,6 +182,14 @@ the build and checked against its `go.sum`. `git lfs help` works; translations a
 
 Unchanged from the earlier PR, plus what the matrix test found:
 
+- **System-wide CA installation is opt-in.** `bin/static-git-install-ca`
+  copies the stable `etc/ssl/cacert.pem` to
+  `/etc/ssl/certs/ca-certificates.crt` only if no standard CA file or
+  non-empty CA directory exists. It is conservative: even an empty file or
+  dangling symlink prevents installation. It needs root and a writable
+  target. The installed copy is not updated or removed with the bundle;
+  application-specific trust settings and other compiled-in CA paths are
+  unchanged. Normal git use still writes nothing outside the bundle.
 - **SSH needs a passwd entry for the UID.** HTTPS works with a random UID;
   OpenSSH refuses to start without a user name.
 - **No `ssh-keygen`, `ssh-keyscan`, `ssh-agent`, `ssh-add`.** Plain

@@ -8,6 +8,7 @@
 # Bundle layout (paths are relative to wherever the bundle is unpacked):
 #
 #   bin/git                     launcher
+#   bin/static-git-install-ca   opt-in system CA installer (same static binary)
 #   libexec/git-core/           real git and its helpers
 #   share/git-core/templates/
 #   fallback/bin/ssh            static OpenSSH client, last on PATH
@@ -38,6 +39,7 @@ esac
 bundle=$(mktemp -d)
 
 install -Dm755 "$launcher" "$bundle/bin/git"
+ln "$bundle/bin/git" "$bundle/bin/static-git-install-ca"
 mkdir -p "$bundle/libexec" "$bundle/share"
 cp -a "$git_destdir/usr/libexec/git-core" "$bundle/libexec/"
 cp -a "$git_destdir/usr/share/git-core" "$bundle/share/"

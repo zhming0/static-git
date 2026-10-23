@@ -20,6 +20,8 @@
 #     ssh
 #   - runtime: random UID, read-only root, symlink on PATH, path with spaces,
 #     empty environment
+#   - opt-in system CA installation: Go/curl/OpenSSL TLS, existing stores,
+#     read-only target and non-root failure, shell-free installation
 #   - git features that depend on the build (test/features.sh)
 set -euo pipefail
 
@@ -100,6 +102,86 @@ al2023      amazonlinux:2023                              /etc/ssl/certs/ca-cert
 leap15      opensuse/leap:15.6                            /etc/ssl/ca-bundle.pem
 busybox     busybox:1.37                                  @B@/etc/ssl/cacert.pem
 EOF
+
+echo "--- :lock: Opt-in system CA installation"
+# Build a real Go consumer with the same pinned toolchain as the launcher.
+cp "$here/test/tls-client.go" "$work/"
+go_version=$(sed -n 's/^ARG GO_VERSION=//p' "$here/Dockerfile")
+alpine_version=$(sed -n 's/^ARG ALPINE_VERSION=//p' "$here/Dockerfile")
+image "$id:system-ca" "golang:$go_version-alpine$alpine_version" <<EOF
+COPY tls-client.go /tls-client.go
+RUN CGO_ENABLED=0 go build -o /tls-client /tls-client.go
+FROM buildpack-deps:bookworm-curl
+COPY bundle/ $B/
+COPY export/ /test/
+COPY --from=0 /tls-client /test/tls-client
+RUN rm -rf /etc/ssl/certs /etc/ssl/cert.pem
+EOF
+tls_url='https://gitserver/main.git/info/refs?service=git-upload-pack'
+sh_in "$id:system-ca" "
+	if /test/tls-client '$tls_url' >/tmp/go-before 2>&1; then exit 1; fi
+	grep -q 'unknown authority' /tmp/go-before
+	if curl -fsS '$tls_url' >/dev/null 2>&1; then exit 1; fi
+	if openssl s_client -connect gitserver:443 -servername gitserver -verify_return_error </dev/null >/tmp/openssl-before 2>&1; then exit 1; fi
+	# A private fixture CA makes this deterministic and proves the copied store is used.
+	cat /test/ca.crt >>$B/etc/ssl/cacert.pem
+	umask 077
+	static-git-install-ca
+	cmp $B/etc/ssl/cacert.pem /etc/ssl/certs/ca-certificates.crt
+	test \"\$(stat -c %a /etc/ssl/certs)\" = 755
+	test \"\$(stat -c %a /etc/ssl/certs/ca-certificates.crt)\" = 644
+	static-git-install-ca | grep -q 'Skipped:'
+	/test/tls-client '$tls_url'
+	curl -fsS '$tls_url' >/dev/null
+	openssl s_client -connect gitserver:443 -servername gitserver -verify_return_error </dev/null >/tmp/openssl-after 2>&1
+	grep -q 'Verify return code: 0 (ok)' /tmp/openssl-after
+"
+pass "no system store: installed bundle enables Go, curl and OpenSSL TLS without overrides"
+
+# Exercise each supported file/directory, not just the destination path.
+# shellcheck disable=SC2016 # Expanded by the container's shell.
+sh_in "$id:system-ca" '
+	for path in /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt \
+		/etc/ssl/ca-bundle.pem /etc/ssl/cert.pem /etc/pki/tls/cacert.pem \
+		/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/ca-certificates/extracted/tls-ca-bundle.pem \
+		/etc/ssl/certs/custom.0 /etc/pki/tls/certs/custom.0 /usr/local/share/certs/custom.pem /etc/openssl/certs/custom.0; do
+		mkdir -p "$(dirname "$path")"
+		printf "image-owned CA\n" >"$path"
+		out=$(static-git-install-ca)
+		case "$out" in Skipped:*) ;; *) echo "$out"; exit 1 ;; esac
+		test "$(cat "$path")" = "image-owned CA"
+		if [ "$path" != /etc/ssl/certs/ca-certificates.crt ]; then
+			test ! -e /etc/ssl/certs/ca-certificates.crt
+		fi
+		rm "$path"
+	done
+	# An empty file is still owned by the image, unlike an empty directory.
+	touch /etc/ssl/certs/ca-certificates.crt
+	static-git-install-ca | grep -q "Skipped:"
+	test ! -s /etc/ssl/certs/ca-certificates.crt
+	rm /etc/ssl/certs/ca-certificates.crt
+	ln -s /missing-ca /etc/ssl/cert.pem
+	static-git-install-ca | grep -q "Skipped:"
+	test "$(readlink /etc/ssl/cert.pem)" = /missing-ca
+	test ! -e /etc/ssl/certs/ca-certificates.crt
+'
+pass "existing system CA files, directory stores and dangling links are untouched"
+run_in --read-only --tmpfs /tmp "$id:system-ca" '
+	if static-git-install-ca >/tmp/error 2>&1; then exit 1; fi
+	cat /tmp/error
+	grep -q "writable" /tmp/error
+	test ! -e /etc/ssl/certs/ca-certificates.crt
+'
+run_in --user 12345:12345 "$id:system-ca" '
+	if static-git-install-ca >/tmp/error 2>&1; then exit 1; fi
+	cat /tmp/error
+	grep -q "requires root" /tmp/error
+	test ! -e /etc/ssl/certs/ca-certificates.crt
+'
+pass "read-only target and non-root installation fail clearly without a store"
+image "$id:ca-scratch" scratch </dev/null
+docker run --rm --platform "$platform" --label "$id" "$id:ca-scratch" "$B/bin/static-git-install-ca"
+pass "installer runs in scratch without a shell"
 
 echo "--- :lock: Private CA"
 # The image's CA store: unknown CA fails, adding it the distro's way works,
